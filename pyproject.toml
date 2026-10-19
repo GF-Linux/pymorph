@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pymorph"
+dynamic = ["version"]
+description = "PyMorph: a interface gráfica nasce das suas funções Python — desenhe a tela e ligue cada botão a uma função"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "Jared" }]
+dependencies = ["PySide6>=6.5"]
+
+[project.optional-dependencies]
+teste = ["pytest"]
+
+[project.scripts]
+pymorph = "pymorph.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "pymorph.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

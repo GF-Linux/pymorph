@@ -1,0 +1,94 @@
+from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtGui import QMouseEvent
+from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton
+
+from pymorph.editor import Editor
+from pymorph.tela import Tela
+
+
+def _item(editor, chave):
+    raiz = editor.arvore.topLevelItem(0)
+    return next(raiz.child(i) for i in range(raiz.childCount())
+                if raiz.child(i).data(0, Qt.ItemDataRole.UserRole) == chave)
+
+
+def _mouse(palco, tipo, x, y):
+    botoes = Qt.MouseButton.LeftButton if tipo != QMouseEvent.Type.MouseButtonRelease else Qt.MouseButton.NoButton
+    ev = QMouseEvent(tipo, QPointF(x, y), QPointF(palco.mapToGlobal(QPoint(x, y))), Qt.MouseButton.LeftButton,
+                     botoes, Qt.KeyboardModifier.NoModifier)
+    QApplication.sendEvent(palco, ev)
+
+
+def test_gerar_arrastar_redimensionar_salvar(calculadora, app, config):
+    editor = Editor(calculadora, config=config)
+    assert editor.arvore.topLevelItem(0).text(0) == "calculadora.py"
+    for nome in ("somar", "multiplicar", "dividir"):
+        editor._gerar(_item(editor, f"calculadora.py:{nome}"))
+    assert editor.modificado
+    assert "3 de 3 botões ligados" in editor.statusBar().currentMessage()
+
+    palco = editor.palco
+    somar = editor.tela.elemento("botao_somar")
+    x0, y0 = somar.x, somar.y
+    _mouse(palco, QMouseEvent.Type.MouseButtonPress, x0 + 10, y0 + 10)
+    assert palco.selecionado == "botao_somar"
+    _mouse(palco, QMouseEvent.Type.MouseMove, x0 + 10 + 37, y0 + 10 + 3)    # encaixa na grade de 8
+    _mouse(palco, QMouseEvent.Type.MouseButtonRelease, x0 + 47, y0 + 13)
+    assert (somar.x, somar.y) == (x0 + 40, y0)
+    assert palco.widgets["botao_somar"].x() == x0 + 40
+
+    canto = (somar.x + somar.largura, somar.y + somar.altura)              # a alça de tamanho
+    _mouse(palco, QMouseEvent.Type.MouseButtonPress, *canto)
+    _mouse(palco, QMouseEvent.Type.MouseMove, canto[0] + 16, canto[1] + 12)
+    _mouse(palco, QMouseEvent.Type.MouseButtonRelease, canto[0] + 16, canto[1] + 12)
+    assert (somar.largura, somar.altura) == (136, 48)
+
+    editor.salvar()
+    assert not editor.modificado
+    salva = Tela.carregar(calculadora)
+    assert salva.elemento("botao_somar").x == x0 + 40
+    assert set(salva.ligacoes) == {"botao_somar", "botao_multiplicar", "botao_dividir"}
+
+
+def test_executar_abre_a_tela_que_funciona(calculadora, app, config):
+    from PySide6.QtCore import QThreadPool
+    editor = Editor(calculadora, config=config)
+    editor._gerar(_item(editor, "calculadora.py:somar"))
+    janela = editor.executar()
+    assert janela.isWindow() and janela.parent() is editor
+    janela.palco.findChild(QLineEdit, "campo_a").setText("2")
+    janela.palco.findChild(QLineEdit, "campo_b").setText("3")
+    janela.palco.findChild(QPushButton, "botao_somar").click()
+    QThreadPool.globalInstance().waitForDone(5000)
+    QApplication.processEvents()
+    assert janela.palco.findChild(QLabel, "resultado").text() == "5"
+
+
+def test_o_editor_le_de_novo_quando_o_arquivo_muda(calculadora, app, config):
+    editor = Editor(calculadora, config=config)
+    (calculadora / "calculadora.py").write_text("def subtrair(a: float, b: float) -> float:\n    return a - b\n")
+    editor.ler_funcoes()        # o QFileSystemWatcher chama isto sozinho quando o arquivo é salvo
+    assert list(editor.funcoes) == ["calculadora.py:subtrair"]
+
+
+def test_painel_liga_um_botao_avulso(calculadora, app, config):
+    editor = Editor(calculadora, config=config)
+    editor._adicionar("decimal")
+    editor.tela.renomear("decimal", "campo_a")
+    editor._adicionar("decimal")
+    editor.tela.renomear("decimal", "campo_b")
+    editor._adicionar("resultado")
+    editor.tela.renomear("resultado_2" if editor.tela.elemento("resultado_2") else "resultado", "resultado")
+    editor._adicionar("botao")
+    editor.palco.selecionar("botao")
+    editor.painel._trocar_funcao(editor.tela.elemento("botao"), "calculadora.py:multiplicar")
+    lig = editor.tela.ligacoes["botao"]
+    assert lig.entradas == {"a": "campo_a", "b": "campo_b"} and lig.saida == "resultado"
+
+
+def test_refazer_o_palco_nao_deixa_widget_antigo_visivel(calculadora, app, config):
+    editor = Editor(calculadora, config=config)
+    for nome in ("somar", "multiplicar", "dividir"):
+        editor._gerar(_item(editor, f"calculadora.py:{nome}"))     # cada geração refaz o palco
+    visiveis = [w for w in editor.palco.findChildren(QLabel) if w.isVisibleTo(editor.palco) and w.text() == "A"]
+    assert len(visiveis) == 1
