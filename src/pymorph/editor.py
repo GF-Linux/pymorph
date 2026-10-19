@@ -232,6 +232,11 @@ class PainelPropriedades(QScrollArea):
         return caixa
 
     def mostrar(self, id_):
+        # quem pede para refazer o painel costuma ser uma caixa dele, no meio do próprio sinal: o
+        # setWidget apagaria o corpo antigo na hora, com a caixa dentro, e o Qt cairia (SEGV)
+        antigo = self.takeWidget()
+        if antigo is not None:
+            descartar(antigo)
         corpo = QWidget()
         form = QFormLayout(corpo)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)

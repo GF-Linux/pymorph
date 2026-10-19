@@ -1,5 +1,11 @@
 # Mudanças
 
+## 0.0.2
+
+- **corrigido:** escolher a função na caixa "Ao clicar, chamar" derrubava o editor (falha de
+  segmentação). O painel se refazia no meio do sinal da própria caixa e o Qt apagava a caixa ali
+  mesmo; agora o corpo antigo é apagado depois. O teste passa pela caixa, como a pessoa faz.
+
 ## 0.0.1
 
 O primeiro protótipo funcional: do `.py` com funções tipadas à janela que o usuário final usa.

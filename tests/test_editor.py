@@ -1,6 +1,7 @@
 from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QMouseEvent
-from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton
+import shiboken6
+from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QLineEdit, QPushButton
 
 from pymorph.editor import Editor
 from pymorph.tela import Tela
@@ -81,9 +82,20 @@ def test_painel_liga_um_botao_avulso(calculadora, app, config):
     editor.tela.renomear("resultado_2" if editor.tela.elemento("resultado_2") else "resultado", "resultado")
     editor._adicionar("botao")
     editor.palco.selecionar("botao")
-    editor.painel._trocar_funcao(editor.tela.elemento("botao"), "calculadora.py:multiplicar")
+    editor.painel.mostrar("botao")
+    # pela caixa, como a pessoa faz: escolher refaz o painel no meio do sinal da própria caixa, e
+    # apagar a caixa ali derrubava o programa (SEGV no 0.0.1)
+    escolha = next(c for c in editor.painel.widget().findChildren(QComboBox)
+                   if c.findData("calculadora.py:multiplicar") >= 0)
+    escolha.setCurrentIndex(escolha.findData("calculadora.py:multiplicar"))
+    assert shiboken6.isValid(escolha)
     lig = editor.tela.ligacoes["botao"]
     assert lig.entradas == {"a": "campo_a", "b": "campo_b"} and lig.saida == "resultado"
+
+    nome = editor.painel.widget().findChild(QLineEdit)        # renomear também refaz tudo
+    nome.setText("botao_vezes")
+    nome.editingFinished.emit()
+    assert shiboken6.isValid(nome) and "botao_vezes" in editor.tela.ligacoes
 
 
 def test_refazer_o_palco_nao_deixa_widget_antigo_visivel(calculadora, app, config):
