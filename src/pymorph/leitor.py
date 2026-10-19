@@ -11,8 +11,9 @@ from pathlib import Path
 IGNORAR = {".venv", "venv", "env", ".git", "__pycache__", "node_modules", "telas", "build", "dist",
            ".pytest_cache", ".ruff_cache"}
 
-# o controle que cada tipo sugere; tipo sem anotação ou desconhecido vira campo de texto
-CONTROLE_POR_TIPO = {"float": "decimal", "int": "inteiro", "str": "texto", "bool": "marcar"}
+# a caixa não tem tipo: quem diz como ler o que foi digitado é o parâmetro da função;
+# sem anotação (ou com uma que a tela não sabe ler), o que parece número vira número
+LEITURA_POR_TIPO = {"float": "número", "int": "número inteiro", "str": "texto", "bool": "sim ou não"}
 
 
 @dataclass
@@ -23,7 +24,13 @@ class Parametro:
 
     @property
     def controle(self):
-        return CONTROLE_POR_TIPO.get(self.tipo, "texto")
+        """O controle que a tela gera para ele: bool vira caixa de marcar, o resto, caixa."""
+        return "marcar" if self.tipo == "bool" else "caixa"
+
+    @property
+    def leitura(self):
+        """Como o que foi digitado chega à função."""
+        return LEITURA_POR_TIPO.get(self.tipo, "automático")
 
 
 @dataclass
@@ -34,6 +41,7 @@ class Funcao:
     parametros: list[Parametro]
     retorno: str | None
     doc: str | None
+    devolve: bool = True    # False: a função é uma ação (abre, grava, move) e não tem resultado a mostrar
 
     @property
     def chave(self):
@@ -73,6 +81,21 @@ def _parametros(args):
     return saida
 
 
+def _devolve(no):
+    """A função devolve um valor? Pela anotação; sem ela, por algum `return valor` no corpo dela
+    (o das funções de dentro não conta)."""
+    if no.returns is not None:
+        return _texto(no.returns) != "None"
+    pendentes = list(no.body)
+    while pendentes:
+        n = pendentes.pop()
+        if isinstance(n, ast.Return) and n.value is not None and _texto(n.value) != "None":
+            return True
+        if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+            pendentes.extend(ast.iter_child_nodes(n))
+    return False
+
+
 def _e_guarda_main(no):
     """if __name__ == "__main__": — o bloco que não roda ao importar."""
     return (isinstance(no, ast.If) and isinstance(no.test, ast.Compare)
@@ -96,7 +119,7 @@ def ler_arquivo(caminho, pasta):
             if no.name.startswith("_"):
                 continue
             arquivo.funcoes.append(Funcao(no.name, rel, no.lineno, _parametros(no.args),
-                                          _texto(no.returns), ast.get_docstring(no)))
+                                          _texto(no.returns), ast.get_docstring(no), _devolve(no)))
         elif isinstance(no, (ast.Import, ast.ImportFrom, ast.ClassDef, ast.AsyncFunctionDef)):
             continue
         elif _e_guarda_main(no):

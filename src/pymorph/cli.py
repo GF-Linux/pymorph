@@ -26,8 +26,9 @@ def _funcoes(pasta):
         if a.codigo_solto:
             print(f"  ⚠ código solto na linha {', '.join(map(str, a.codigo_solto))}: roda quando a tela rodar")
         for f in a.funcoes:
-            controles = ", ".join(f"{p.nome} → {p.controle}" for p in f.parametros)
-            print(f"  {f.nome}{f.assinatura()}" + (f"    [{controles}]" if controles else ""))
+            controles = ", ".join(f"{p.nome} → {p.leitura}" for p in f.parametros)
+            acao = "" if f.devolve else "    (ação: não devolve valor)"
+            print(f"  {f.nome}{f.assinatura()}" + (f"    [{controles}]" if controles else "") + acao)
             total += 1
     if total == 0:
         print("nenhuma função pública encontrada (as que começam com _ ficam de fora)")

@@ -74,12 +74,11 @@ def test_o_editor_le_de_novo_quando_o_arquivo_muda(calculadora, app, config):
 
 def test_painel_liga_um_botao_avulso(calculadora, app, config):
     editor = Editor(calculadora, config=config)
-    editor._adicionar("decimal")
-    editor.tela.renomear("decimal", "campo_a")
-    editor._adicionar("decimal")
-    editor.tela.renomear("decimal", "campo_b")
-    editor._adicionar("resultado")
-    editor.tela.renomear("resultado_2" if editor.tela.elemento("resultado_2") else "resultado", "resultado")
+    for nome in ("campo_a", "campo_b", "resultado"):
+        editor._adicionar("caixa")
+        editor.tela.renomear("caixa", nome)
+    editor.palco.reconstruir()                  # o painel faz isto ao renomear
+    assert isinstance(editor.palco.widgets["campo_a"], QLabel)      # solta, a caixa é texto
     editor._adicionar("botao")
     editor.palco.selecionar("botao")
     editor.painel.mostrar("botao")
@@ -91,6 +90,8 @@ def test_painel_liga_um_botao_avulso(calculadora, app, config):
     assert shiboken6.isValid(escolha)
     lig = editor.tela.ligacoes["botao"]
     assert lig.entradas == {"a": "campo_a", "b": "campo_b"} and lig.saida == "resultado"
+    assert isinstance(editor.palco.widgets["campo_a"], QLineEdit)   # ligada como entrada, vira campo
+    assert "fdf1e7" not in editor.palco.widgets["resultado"].styleSheet()
 
     nome = editor.painel.widget().findChild(QLineEdit)        # renomear também refaz tudo
     nome.setText("botao_vezes")
@@ -104,3 +105,17 @@ def test_refazer_o_palco_nao_deixa_widget_antigo_visivel(calculadora, app, confi
         editor._gerar(_item(editor, f"calculadora.py:{nome}"))     # cada geração refaz o palco
     visiveis = [w for w in editor.palco.findChildren(QLabel) if w.isVisibleTo(editor.palco) and w.text() == "A"]
     assert len(visiveis) == 1
+
+
+def test_a_caixa_ajusta_letra_e_negrito(calculadora, app, config):
+    from PySide6.QtWidgets import QCheckBox, QSpinBox
+    editor = Editor(calculadora, config=config)
+    editor._adicionar("caixa")
+    editor.painel.mostrar("caixa")
+    editor.painel.widget().findChildren(QSpinBox)[0].setValue(20)      # a primeira é a letra
+    next(c for c in editor.painel.widget().findChildren(QCheckBox) if c.text() == "Negrito").setChecked(True)
+    fonte = editor.palco.widgets["caixa"].font()
+    assert (fonte.pointSize(), fonte.bold()) == (20, True)
+    editor.salvar()
+    caixa = Tela.carregar(calculadora).elemento("caixa")
+    assert (caixa.fonte, caixa.negrito, caixa.texto) == (20, True, "Texto")

@@ -24,8 +24,13 @@ def _clicar(janela, botao, a, b):
 
 
 def test_converter_e_formatar():
-    assert converter("7,5", "decimal") == 7.5
-    assert converter(" 3 ", "inteiro") == 3
+    assert converter("7,5", "float") == 7.5
+    assert converter(" 3 ", "int") == 3
+    assert converter("007", "str") == "007"
+    assert converter("sim", "bool") is True and converter("não", "bool") is False
+    # sem tipo: o que parece número vira número; o resto continua texto
+    assert converter("2", None) == 2 and converter("7,5", None) == 7.5 and converter("-0.5", "list") == -0.5
+    assert converter("ab", None) == "ab" and converter("inf", None) == "inf" and converter("", None) == ""
     assert formatar(16.0) == "16" and formatar(3.75) == "3,75" and formatar(None) == "—"
 
 
@@ -93,3 +98,37 @@ def test_tela_cheia_abre_maximizada_na_primeira_vez(calculadora, config):
     tela.salvar(calculadora)
     janela = Janela(calculadora, Tela.carregar(calculadora), config=config)
     assert janela._abrir_maximizada
+
+
+def _rodar(pasta, codigo, chave, valores, config):
+    (pasta / "f.py").write_text(codigo)
+    funcoes = funcoes_por_chave(ler_pasta(pasta))
+    tela = Tela()
+    botao = gerar_da_funcao(tela, funcoes[chave])
+    tela.salvar(pasta)
+    janela = abrir(pasta, config=config)
+    for campo, valor in valores.items():
+        janela.palco.findChild(QLineEdit, campo).setText(valor)
+    janela.palco.findChild(QPushButton, botao.id).click()
+    QThreadPool.globalInstance().waitForDone(5000)
+    QApplication.processEvents()
+    return janela
+
+
+def test_sem_tipo_numero_soma_e_texto_junta(tmp_path, config):
+    codigo = "def calculadora(a, b):\n    return a + b\n"
+    janela = _rodar(tmp_path, codigo, "f.py:calculadora", {"campo_a": "2", "campo_b": "3"}, config)
+    assert janela.palco.findChild(QLabel, "resultado").text() == "5"
+    janela = _rodar(tmp_path, codigo, "f.py:calculadora", {"campo_a": "ab", "campo_b": "cd"}, config)
+    assert janela.palco.findChild(QLabel, "resultado").text() == "abcd"
+
+
+def test_a_acao_roda_e_o_erro_dela_vira_janela_de_aviso(tmp_path, config):
+    marca = tmp_path / "feito.txt"
+    codigo = f"from pathlib import Path\ndef marcar(texto: str):\n    Path({str(marca)!r}).write_text(texto)\n"
+    janela = _rodar(tmp_path, codigo, "f.py:marcar", {"campo_texto": "ok"}, config)
+    assert marca.read_text() == "ok" and janela._aviso is None
+    codigo = "def falhar(x):\n    raise OSError('a pasta não existe')\n"
+    janela = _rodar(tmp_path, codigo, "f.py:falhar", {"campo_x": "1"}, config)
+    assert janela._aviso.text() == "OSError: a pasta não existe"
+    assert "Traceback" in janela._aviso.detailedText()

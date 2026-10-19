@@ -9,7 +9,8 @@ def test_le_as_funcoes_com_tipos_e_docstring(calculadora):
     assert somar.assinatura() == "(a: float, b: float) -> float"
     assert somar.doc == "Soma dois números."
     assert somar.chave == "calculadora.py:somar"
-    assert [p.controle for p in somar.parametros] == ["decimal", "decimal"]
+    assert [p.controle for p in somar.parametros] == ["caixa", "caixa"]
+    assert [p.leitura for p in somar.parametros] == ["número", "número"]
 
 
 def test_nao_executa_o_arquivo(tmp_path):
@@ -26,7 +27,7 @@ def test_nao_executa_o_arquivo(tmp_path):
     assert arquivo.codigo_solto == [2]          # o if __name__ não conta
     (media,) = arquivo.funcoes
     assert media.assinatura() == "(xs: list, casas: int = 2) -> float"
-    assert [p.controle for p in media.parametros] == ["texto", "inteiro"]
+    assert [p.leitura for p in media.parametros] == ["automático", "número inteiro"]
 
 
 def test_ignora_privadas_venv_e_telas_e_relata_erro_de_sintaxe(tmp_path):
@@ -41,3 +42,17 @@ def test_ignora_privadas_venv_e_telas_e_relata_erro_de_sintaxe(tmp_path):
     assert arquivos["a.py"].funcoes[0].parametros[0].controle == "marcar"
     assert arquivos["quebrado.py"].erro.startswith("SyntaxError")
     assert arquivos["sub/m.py"].funcoes[0].chave == "sub/m.py:g"
+
+
+def test_sabe_se_a_funcao_devolve_valor_ou_e_uma_acao(tmp_path):
+    (tmp_path / "f.py").write_text(
+        "import os\n"
+        "def somar(a, b):\n    return a + b\n"                      # sem tipo, mas devolve
+        "def abrir_pasta(caminho):\n    os.system(caminho)\n"         # ação
+        "def gravar(x) -> None:\n    return print(x)\n"               # a anotação manda
+        "def so_volta(x):\n    if x:\n        return\n    return None\n"
+        "def fabrica():\n    def dentro():\n        return 1\n    dentro()\n"  # o return é da de dentro
+        "def media(xs) -> float:\n    ...\n")
+    (arquivo,) = ler_pasta(tmp_path)
+    assert {f.nome: f.devolve for f in arquivo.funcoes} == {
+        "somar": True, "abrir_pasta": False, "gravar": False, "so_volta": False, "fabrica": False, "media": True}

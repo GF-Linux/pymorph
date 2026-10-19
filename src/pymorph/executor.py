@@ -3,13 +3,16 @@
 - o desenho vem do .ui salvo, pelo QUiLoader (o mesmo caminho que o Qt usa para o Designer);
 - o arquivo do usuário só é importado aqui, na primeira chamada;
 - cada chamada roda numa thread, para a janela não congelar num cálculo longo;
-- erro da função vira aviso no resultado; a janela continua aberta;
+- o que foi digitado chega à função como o parâmetro pede (float, int, str); sem tipo, automático;
+- erro da função vira aviso na caixa do resultado ou, numa ação sem resultado, numa janela de aviso;
+  a janela continua aberta;
 - a janela abre no tamanho desenhado e, depois, no último tamanho que o usuário deixou;
 - redimensionar não escala nada: o desenho fica centralizado e a sobra vira margem;
 - Ctrl + / Ctrl − / Ctrl 0 é o zoom: escala tudo, 1,2× por passo, como no VS Code.
 """
 import hashlib
 import importlib.util
+import re
 import sys
 import traceback
 from functools import partial
@@ -18,7 +21,7 @@ from pathlib import Path
 from PySide6.QtCore import QFile, QObject, QRect, QRunnable, QSettings, Qt, QThreadPool, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QCheckBox, QGridLayout, QLabel, QLineEdit, QPushButton, QWidget
+from PySide6.QtWidgets import QCheckBox, QGridLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QWidget
 
 from pymorph.leitor import funcoes_por_chave, ler_pasta
 from pymorph.tela import ESTILO_RESULTADO, Tela
@@ -32,18 +35,39 @@ class EntradaInvalida(ValueError):
     pass
 
 
-def converter(texto, controle):
-    """O texto do campo no tipo que a função pediu. Aceita vírgula decimal."""
-    if controle == "decimal":
+INTEIRO = re.compile(r"[+-]?\d+")
+DECIMAL = re.compile(r"[+-]?(\d+[.,]\d*|[.,]\d+)")
+SIM = {"sim", "s", "verdadeiro", "true", "1"}
+NAO = {"não", "nao", "n", "falso", "false", "0", ""}
+
+
+def converter(texto, tipo, nome="o campo"):
+    """O que foi digitado na caixa, do jeito que o parâmetro pede (a anotação dele: 'float', 'int'…).
+    Sem anotação, ou com uma que a tela não sabe ler, é automático: o que parece número vira
+    número, o resto continua texto. Aceita vírgula decimal."""
+    limpo = texto.strip()
+    if tipo in ("float", "int") and not limpo:
+        raise EntradaInvalida(f"falta preencher {nome}")
+    if tipo == "float":
         try:
-            return float(texto.strip().replace(",", "."))
+            return float(limpo.replace(",", "."))
         except ValueError:
             raise EntradaInvalida(f"“{texto}” não é um número") from None
-    if controle == "inteiro":
+    if tipo == "int":
         try:
-            return int(texto.strip())
+            return int(limpo)
         except ValueError:
             raise EntradaInvalida(f"“{texto}” não é um número inteiro") from None
+    if tipo == "str":
+        return texto
+    if tipo == "bool":
+        if limpo.lower() in SIM | NAO:
+            return limpo.lower() in SIM
+        raise EntradaInvalida(f"“{texto}” não é sim nem não")
+    if INTEIRO.fullmatch(limpo):
+        return int(limpo)
+    if DECIMAL.fullmatch(limpo):
+        return float(limpo.replace(",", "."))
     return texto
 
 
@@ -86,6 +110,7 @@ class Janela(QWidget):
         self.chave_config = "janelas/" + hashlib.sha1(f"{self.pasta}|{tela.nome}".encode()).hexdigest()[:12]
         self.zoom = 0
         self._modulos = {}
+        self._aviso = None
         self.setWindowTitle(tela.nome.replace("_", " ").capitalize())
 
         ui, _ = tela.caminhos(self.pasta)
@@ -155,13 +180,13 @@ class Janela(QWidget):
             self._modulos[arquivo] = modulo
         return getattr(self._modulos[arquivo], nome)
 
-    def _ler_campo(self, campo_id, controle):
+    def _ler_campo(self, campo_id, parametro):
         w = self.palco.findChild(QWidget, campo_id)
         if isinstance(w, QCheckBox):
             return w.isChecked()
-        if isinstance(w, QLineEdit):
-            return converter(w.text(), controle)
-        raise EntradaInvalida(f"o campo {campo_id} não existe na tela")
+        if isinstance(w, (QLineEdit, QLabel)):
+            return converter(w.text(), parametro.tipo, parametro.nome)
+        raise EntradaInvalida(f"a caixa {campo_id} não existe na tela")
 
     def chamar(self, botao_id):
         lig = self.tela.ligacoes[botao_id]
@@ -175,9 +200,9 @@ class Janela(QWidget):
                 campo = lig.entradas.get(p.nome)
                 if campo is None:
                     if p.padrao is None:
-                        raise EntradaInvalida(f"o parâmetro {p.nome} não está ligado a nenhum campo")
+                        raise EntradaInvalida(f"o parâmetro {p.nome} não está ligado a nenhuma caixa")
                     continue
-                argumentos[p.nome] = self._ler_campo(campo, p.controle)
+                argumentos[p.nome] = self._ler_campo(campo, p)
             chamavel = self._funcao(lig.funcao)
         except EntradaInvalida as e:
             self._falhou(botao_id, str(e), "")
@@ -190,28 +215,35 @@ class Janela(QWidget):
         QThreadPool.globalInstance().start(_Chamada(self.sinais, botao_id, chamavel, argumentos))
 
     def _saida(self, botao_id):
+        """A caixa que mostra o resultado: só de mostrar (QLabel) ou a mesma em que se digita."""
         saida = self.tela.ligacoes[botao_id].saida
-        return self.palco.findChild(QLabel, saida) if saida else None
+        return self.palco.findChild(QWidget, saida) if saida else None
 
     def _terminou(self, botao_id, valor):
         self.palco.findChild(QPushButton, botao_id).setEnabled(True)
-        rotulo = self._saida(botao_id)
-        if rotulo is not None:
-            rotulo.setStyleSheet(ESTILO_RESULTADO)
-            rotulo.setToolTip("")
-            rotulo.setText(formatar(valor))
+        caixa = self._saida(botao_id)
+        if isinstance(caixa, QLabel):
+            caixa.setStyleSheet(ESTILO_RESULTADO)
+            caixa.setToolTip("")
+        if caixa is not None:
+            caixa.setText(formatar(valor))
 
     def _falhou(self, botao_id, mensagem, detalhe):
         botao = self.palco.findChild(QPushButton, botao_id)
         if botao is not None:
             botao.setEnabled(True)
-        rotulo = self._saida(botao_id)
-        if rotulo is not None:
-            rotulo.setStyleSheet(ESTILO_AVISO)
-            rotulo.setText(mensagem)
-            rotulo.setToolTip(detalhe)
-        else:
-            print(f"pymorph: {mensagem}", file=sys.stderr)
+        caixa = self._saida(botao_id)
+        if isinstance(caixa, QLabel):
+            caixa.setStyleSheet(ESTILO_AVISO)
+            caixa.setText(mensagem)
+            caixa.setToolTip(detalhe)
+            return
+        # uma ação não tem resultado, e a caixa em que se digita não pode perder o que foi digitado
+        self._aviso = QMessageBox(QMessageBox.Icon.Warning, self.windowTitle(), mensagem,
+                                  QMessageBox.StandardButton.Ok, self)
+        if detalhe:
+            self._aviso.setDetailedText(detalhe)
+        self._aviso.open()
 
     # ── fechar ────────────────────────────────────────────────────────────
 

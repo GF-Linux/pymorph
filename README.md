@@ -18,16 +18,30 @@ pymorph rodar      ← a tela como o usuário final vê
 ## Como funciona
 
 1. **O leitor** acha as funções públicas de todos os `.py` da pasta pelo `ast`, **sem executar nada**:
-   importar o arquivo rodaria o código solto dele. Cada tipo sugere um controle: `float` vira campo
-   decimal (aceita vírgula), `int` campo inteiro, `str` campo de texto, `bool` caixa de marcar. Código
-   solto que chama algo ao importar aparece como aviso.
+   importar o arquivo rodaria o código solto dele. O tipo do parâmetro diz como o que foi digitado
+   chega à função: `float` como número (aceita vírgula), `int` como inteiro, `str` como texto, `bool`
+   vira caixa de marcar; **sem tipo, é automático**: o que parece número vira número, o resto continua
+   texto (2 e 3 somam 5; "ab" e "cd" juntam "abcd"). Função sem `return valor` (ou com `-> None`) é uma
+   **ação**: abre, grava, move, e não tem resultado a mostrar. Código solto que chama algo ao importar
+   aparece como aviso.
 2. **O editor** tem as funções e os controles à esquerda, o palco no meio e as propriedades à direita.
-   - duplo clique numa função gera os campos, o botão e o resultado dela; campos com o mesmo parâmetro
-     são reaproveitados (somar, multiplicar e dividir dividem `a`, `b` e o resultado);
+   - são três controles: **Caixa**, **Botão** e **Caixa de marcar**. A caixa não tem tipo, e o papel
+     dela vem das ligações dos botões:
+
+     | a caixa é… | quando | aparece como |
+     |---|---|---|
+     | texto fixo (um título) | nenhum botão usa | texto; letra e negrito ajustáveis |
+     | entrada | um botão lê dela | campo para digitar |
+     | saída | um botão manda o resultado para ela | o resultado, num quadro |
+     | entrada e saída | as duas coisas (o visor de uma calculadora) | campo, e o resultado aparece nele |
+
+   - duplo clique numa função gera um título e uma caixa por parâmetro, o botão e, se ela devolve um
+     valor, a caixa do resultado; numa ação, só o botão. Caixas do mesmo parâmetro são reaproveitadas
+     (somar, multiplicar e dividir dividem `a`, `b` e o resultado);
    - arrastar move, a alça azul no canto muda o tamanho, a grade é de 8 px (Shift solta), as setas
      movem, Delete apaga;
-   - num botão, "Ao clicar, chamar" escolhe a função e casa cada parâmetro com um campo e o retorno com
-     um resultado; a bolinha azul marca botão ligado, a laranja, botão sem função;
+   - num botão, "Ao clicar, chamar" escolhe a função e casa cada parâmetro com uma caixa e o retorno
+     com outra; a bolinha azul marca botão ligado, a laranja, botão sem função;
    - a lista de funções se atualiza sozinha quando o `.py` é salvo;
    - o tamanho do desenho é Pequena (480×360), Intermediária (960×640) ou Tela cheia (1920×1080):
      conveniência de quem desenha, não limite de quem usa.
@@ -39,8 +53,8 @@ pymorph rodar      ← a tela como o usuário final vê
 4. **A tela rodando** (`Executar ▶` no editor, ou `pymorph rodar`):
    - o desenho vem do `.ui` pelo `QUiLoader`; o seu arquivo só é importado na primeira chamada;
    - cada chamada roda numa thread: a janela não congela num cálculo longo;
-   - erro da função vira aviso no lugar do resultado (o traceback fica no texto de ajuda); a janela
-     continua aberta;
+   - erro da função vira aviso no lugar do resultado (o traceback fica no texto de ajuda); numa ação,
+     ou quando a saída é a própria caixa de digitar, vira uma janela de aviso; a janela continua aberta;
    - a janela abre no tamanho desenhado (Tela cheia abre maximizada) e, depois, no último tamanho que
      o usuário deixou;
    - redimensionar não escala nada: o desenho fica no centro e a sobra vira margem, como o VS Code

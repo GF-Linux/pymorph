@@ -68,3 +68,42 @@ def test_renomear_e_remover_atualizam_as_ligacoes(calculadora):
     assert tela.ligacoes["botao_somar"].saida is None
     tela.remover("botao_somar")
     assert "botao_somar" not in tela.ligacoes
+
+
+def test_o_papel_da_caixa_vem_das_ligacoes(calculadora):
+    tela, _ = _calculadora(calculadora)
+    ui = tela.para_ui()
+    assert '<widget class="QLabel" name="titulo_a">' in ui          # ninguém usa: texto
+    assert '<widget class="QLineEdit" name="campo_a">' in ui        # entrada
+    assert '<widget class="QLabel" name="resultado">' in ui         # saída, com o estilo do resultado
+    assert ui.count("styleSheet") == 1
+    tela.ligacoes["botao_somar"].saida = "campo_a"                  # entrada e saída: o visor
+    assert tela.papel("campo_a") == "entrada e saída"
+    tela.remover("botao_multiplicar")
+    tela.remover("botao_dividir")
+    assert tela.papel("resultado") == "texto"                       # sem botão que mande nada para ela
+
+
+def test_acao_nao_ganha_resultado(tmp_path):
+    from pymorph.leitor import funcoes_por_chave, ler_pasta
+    (tmp_path / "f.py").write_text("def abrir(pasta: str):\n    print(pasta)\n")
+    tela = Tela()
+    botao = gerar_da_funcao(tela, funcoes_por_chave(ler_pasta(tmp_path))["f.py:abrir"])
+    assert [e.id for e in tela.elementos] == ["titulo_pasta", "campo_pasta", "botao_abrir"]
+    assert tela.ligacoes[botao.id].saida is None
+
+
+def test_abre_a_tela_da_versao_anterior(tmp_path):
+    (tmp_path / "telas").mkdir()
+    (tmp_path / "telas" / "principal.ui").write_text(
+        '<ui version="4.0"><widget class="QWidget" name="principal">'
+        '<property name="geometry"><rect><x>0</x><y>0</y><width>480</width><height>360</height></rect></property>'
+        '<widget class="QLineEdit" name="campo_a"><property name="placeholderText"><string>0,00</string></property>'
+        '<property name="pymorphTipo" stdset="0"><string>decimal</string></property></widget>'
+        '<widget class="QLabel" name="resultado"><property name="text"><string>—</string></property>'
+        '<property name="font"><font><pointsize>14</pointsize></font></property>'
+        '<property name="pymorphTipo" stdset="0"><string>resultado</string></property></widget>'
+        '</widget></ui>')
+    tela = Tela.carregar(tmp_path)
+    assert [(e.id, e.tipo, e.texto, e.fonte) for e in tela.elementos] == [
+        ("campo_a", "caixa", "0,00", 0), ("resultado", "caixa", "—", 14)]

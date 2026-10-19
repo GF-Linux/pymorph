@@ -14,8 +14,17 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QGridLayout, Q
 
 from pymorph import __version__, executor
 from pymorph.leitor import funcoes_por_chave, ler_pasta
-from pymorph.tela import (CAMPOS, ESTILO_RESULTADO, NOME_TAMANHO, NOME_TIPO, PONTOS_RESULTADO, TAMANHOS,
-                          Ligacao, Tela, gerar_da_funcao)
+from pymorph.tela import (ENTRADA, ENTRADA_E_SAIDA, ENTRADAS, ESTILO_RESULTADO, NOME_TAMANHO, NOME_TIPO,
+                          SAIDA, TAMANHOS, TEXTO, TIPOS, Ligacao, Tela, gerar_da_funcao)
+
+USO = {TEXTO: "texto fixo, como um título. Vira entrada quando um botão lê dela, e mostra o "
+             "resultado quando um botão manda a saída para ela.",
+       ENTRADA: "entrada: a pessoa digita aqui, e o botão passa o que foi digitado à função.",
+       SAIDA: "saída: mostra o que a função devolveu.",
+       ENTRADA_E_SAIDA: "entrada e saída: a pessoa digita, e o resultado aparece aqui (como o visor de "
+                        "uma calculadora)."}
+DICA_TIPO = {"caixa": "Texto, entrada ou resultado: o papel vem das ligações dos botões",
+             "botao": "Chama uma função", "marcar": "Sim ou não"}
 
 GRADE = 8           # o arrasto encaixa de 8 em 8 px; com Shift, livre
 AZUL = QColor("#1f5fbf")
@@ -33,23 +42,27 @@ def descartar(widget):
     widget.deleteLater()
 
 
-def criar_widget(elemento, pai):
-    """O widget de verdade, como vai aparecer para o usuário final, mas sem receber clique."""
+def criar_widget(elemento, pai, papel=TEXTO):
+    """O widget de verdade, como vai aparecer para o usuário final, mas sem receber clique.
+    A caixa se apresenta pelo papel que as ligações dão a ela (como no .ui)."""
     if elemento.tipo == "botao":
         w = QPushButton(elemento.texto, pai)
     elif elemento.tipo == "marcar":
         w = QCheckBox(elemento.texto, pai)
-    elif elemento.tipo in CAMPOS:
+    elif papel in (ENTRADA, ENTRADA_E_SAIDA):
         w = QLineEdit(pai)
         w.setPlaceholderText(elemento.texto)
     else:
         w = QLabel(elemento.texto, pai)
-        if elemento.tipo == "resultado":
+        w.setWordWrap(True)
+        if papel == SAIDA:
             w.setStyleSheet(ESTILO_RESULTADO)
-            w.setWordWrap(True)
-            fonte = w.font()
-            fonte.setPointSize(PONTOS_RESULTADO)
-            w.setFont(fonte)
+    if elemento.fonte or elemento.negrito:
+        fonte = w.font()
+        if elemento.fonte:
+            fonte.setPointSize(elemento.fonte)
+        fonte.setBold(elemento.negrito)
+        w.setFont(fonte)
     w.setObjectName(elemento.id)
     w.setGeometry(elemento.x, elemento.y, elemento.largura, elemento.altura)
     w.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
@@ -59,7 +72,8 @@ def criar_widget(elemento, pai):
 
 
 class Moldura(QWidget):
-    """Camada por cima do palco: a seleção, a alça de tamanho e a marca de botão ligado."""
+    """Camada por cima do palco: a seleção, a alça de tamanho, a marca de botão ligado e o contorno
+    tracejado das caixas de texto (uma caixa vazia sumiria do palco)."""
 
     def __init__(self, palco):
         super().__init__(palco)
@@ -71,7 +85,11 @@ class Moldura(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         tela = self.palco.tela
         for e in tela.elementos:
-            if e.tipo == "botao":
+            if e.tipo == "caixa" and tela.papel(e.id) == TEXTO:
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(QColor("#c3c9d0"), 1, Qt.PenStyle.DashLine))
+                p.drawRect(QRect(e.x, e.y, e.largura - 1, e.altura - 1))
+            elif e.tipo == "botao":
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(AZUL if e.id in tela.ligacoes else LARANJA)
                 p.drawEllipse(QPoint(e.x + e.largura - 4, e.y + 4), 4, 4)
@@ -103,7 +121,7 @@ class Palco(QWidget):
     def reconstruir(self):
         for w in self.widgets.values():
             descartar(w)
-        self.widgets = {e.id: criar_widget(e, self) for e in self.tela.elementos}
+        self.widgets = {e.id: criar_widget(e, self, self.tela.papel(e.id)) for e in self.tela.elementos}
         self.setFixedSize(self.tela.largura, self.tela.altura)
         self.moldura.setGeometry(self.rect())
         self.moldura.raise_()
@@ -115,7 +133,7 @@ class Palco(QWidget):
             descartar(self.widgets.pop(id_))
         e = self.tela.elemento(id_)
         if e is not None:
-            self.widgets[id_] = criar_widget(e, self)
+            self.widgets[id_] = criar_widget(e, self, self.tela.papel(id_))
         self.moldura.raise_()
         self.moldura.update()
 
@@ -181,7 +199,7 @@ class Palco(QWidget):
                  Qt.Key.Key_Up: (0, -passo), Qt.Key.Key_Down: (0, passo)}
         if ev.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
             self.tela.remover(e.id)
-            descartar(self.widgets.pop(e.id))
+            self.reconstruir()      # sem o botão, as caixas dele podem mudar de papel
             self.selecionar(None)
             self.mudou.emit()
         elif ev.key() in setas:
@@ -259,9 +277,26 @@ class PainelPropriedades(QScrollArea):
         nome = QLineEdit(e.id)
         nome.editingFinished.connect(lambda: self._renomear(e, nome))
         form.addRow("Nome", nome)
+        papel = self.tela.papel(e.id) if e.tipo == "caixa" else None
+        if papel is not None:
+            uso = QLabel(USO[papel])
+            uso.setWordWrap(True)
+            uso.setStyleSheet("color: #3b4652;")
+            form.addRow("Uso", uso)
         texto = QLineEdit(e.texto)
         texto.textEdited.connect(lambda t: self._mudar(e, "texto", t))
-        form.addRow("Dica" if e.tipo in CAMPOS - {"marcar"} else "Texto", texto)
+        form.addRow("Dica" if papel in (ENTRADA, ENTRADA_E_SAIDA) else "Texto", texto)
+        letra = QSpinBox()
+        letra.setRange(0, 96)
+        letra.setSpecialValueText("padrão")
+        letra.setSuffix(" pt")
+        letra.setValue(e.fonte)
+        letra.valueChanged.connect(lambda v: self._mudar(e, "fonte", v))
+        form.addRow("Letra", letra)
+        negrito = QCheckBox("Negrito")
+        negrito.setChecked(e.negrito)
+        negrito.toggled.connect(lambda v: self._mudar(e, "negrito", v))
+        form.addRow("", negrito)
         for campo, rotulo, limite in (("x", "X", self.tela.largura), ("y", "Y", self.tela.altura),
                                       ("largura", "Largura", self.tela.largura),
                                       ("altura", "Altura", self.tela.altura)):
@@ -331,25 +366,26 @@ class PainelPropriedades(QScrollArea):
             form.addRow(doc)
 
         form.addRow(self._titulo("Entradas", "#174a94"))
-        campos = [e for e in self.tela.elementos if e.tipo in CAMPOS]
+        campos = [e for e in self.tela.elementos if e.tipo in ENTRADAS]
         for p in funcao.parametros:
             caixa = self._caixa_escolha()
-            caixa.addItem("(padrão da função)" if p.padrao is not None else "(nenhum campo)", None)
+            caixa.addItem("(padrão da função)" if p.padrao is not None else "(nenhuma caixa)", None)
             for c in campos:
                 caixa.addItem(f"{c.id} · {NOME_TIPO[c.tipo]}", c.id)
             caixa.setCurrentIndex(max(0, caixa.findData(lig.entradas.get(p.nome))))
             caixa.currentIndexChanged.connect(
                 lambda _, nome=p.nome, cx=caixa: self._ligar_entrada(botao, nome, cx.currentData()))
-            form.addRow(f"{p.nome}: {p.tipo or '?'}", caixa)
+            caixa.setToolTip(f"o que for digitado chega a {p.nome} como {p.leitura}")
+            form.addRow(f"{p.nome} · {p.leitura}", caixa)
 
         form.addRow(self._titulo("Saída", "#174a94"))
         saida = self._caixa_escolha()
         saida.addItem("(não mostrar)", None)
-        for r in (e for e in self.tela.elementos if e.tipo in ("resultado", "rotulo")):
+        for r in (e for e in self.tela.elementos if e.tipo == "caixa"):
             saida.addItem(f"{r.id} · {NOME_TIPO[r.tipo]}", r.id)
         saida.setCurrentIndex(max(0, saida.findData(lig.saida)))
         saida.currentIndexChanged.connect(lambda _: self._ligar_saida(botao, saida.currentData()))
-        form.addRow(f"-> {funcao.retorno or '?'}", saida)
+        form.addRow(f"→ {funcao.retorno or 'valor'}" if funcao.devolve else "→ nada (ação)", saida)
 
     def _trocar_funcao(self, botao, chave):
         if chave is None:
@@ -363,8 +399,10 @@ class PainelPropriedades(QScrollArea):
                     if self.tela.elemento(f"campo_{p.nome}") is not None:
                         entradas[p.nome] = f"campo_{p.nome}"
             saida = antigo.saida if antigo else ("resultado" if self.tela.elemento("resultado") else None)
+            if funcao is not None and not funcao.devolve:
+                saida = None
             self.tela.ligacoes[botao.id] = Ligacao(chave, entradas, saida)
-        self.alterou.emit(botao.id, False)
+        self.alterou.emit(botao.id, True)       # as caixas ligadas mudam de papel
         self.mostrar(botao.id)
 
     def _ligar_entrada(self, botao, parametro, campo):
@@ -373,11 +411,11 @@ class PainelPropriedades(QScrollArea):
             lig.entradas.pop(parametro, None)
         else:
             lig.entradas[parametro] = campo
-        self.alterou.emit(botao.id, False)
+        self.alterou.emit(botao.id, True)
 
     def _ligar_saida(self, botao, id_):
         self.tela.ligacoes[botao.id].saida = id_
-        self.alterou.emit(botao.id, False)
+        self.alterou.emit(botao.id, True)
 
 
 class Editor(QMainWindow):
@@ -434,13 +472,15 @@ class Editor(QMainWindow):
         self.arvore.itemDoubleClicked.connect(lambda item, _: self._gerar(item))
         col.addWidget(self.arvore, 1)
         gerar = QPushButton("Gerar na tela")
-        gerar.setToolTip("Cria os campos, o botão e o resultado da função selecionada")
+        gerar.setToolTip("Cria as caixas dos parâmetros, o botão e, se a função devolve um valor, "
+                         "a caixa do resultado")
         gerar.clicked.connect(lambda: self._gerar(self.arvore.currentItem()))
         col.addWidget(gerar)
         col.addWidget(self._secao("Controles"))
         grade = QGridLayout()
-        for i, tipo in enumerate(("rotulo", "decimal", "inteiro", "texto", "marcar", "botao", "resultado")):
+        for i, tipo in enumerate(TIPOS):
             b = QPushButton(NOME_TIPO[tipo])
+            b.setToolTip(DICA_TIPO[tipo])
             b.clicked.connect(lambda _, t=tipo: self._adicionar(t))
             grade.addWidget(b, i // 2, i % 2)
         col.addLayout(grade)

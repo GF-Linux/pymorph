@@ -1,5 +1,17 @@
 # Mudanças
 
+## 0.0.3
+
+- **uma caixa só.** Campo decimal, campo inteiro, campo de texto, rótulo e resultado viraram a
+  **Caixa**. Os controles agora são Caixa, Botão e Caixa de marcar. O papel da caixa vem das ligações:
+  texto fixo (título), entrada, saída, ou entrada e saída (o visor). Letra e negrito no painel.
+- **o tipo é do parâmetro, não da caixa:** `float`, `int`, `str` e `bool` dizem como o que foi digitado
+  chega à função; sem tipo é automático (número se parece número, senão texto). `def f(a, b): return a + b`
+  com 2 e 3 dá 5, e não mais "23".
+- **ação:** função sem `return valor` (ou `-> None`) não ganha caixa de resultado; o erro dela vira
+  janela de aviso. `pymorph funcoes` marca as ações.
+- telas da 0.0.1/0.0.2 abrem: os tipos antigos viram caixa.
+
 ## 0.0.2
 
 - **corrigido:** escolher a função na caixa "Ao clicar, chamar" derrubava o editor (falha de

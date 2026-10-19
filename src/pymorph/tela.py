@@ -3,9 +3,13 @@
     telas/<nome>.ui              o desenho, no formato do Qt Designer (abre nele)
     telas/<nome>.ligacoes.json   que função cada botão chama, de onde vêm as entradas, para onde vai a saída
 
-O .ui leva só o que o PyMorph controla (posição, tamanho, texto, estilo). Gravar todas as
+O .ui leva só o que o PyMorph controla (posição, tamanho, texto, letra, estilo). Gravar todas as
 propriedades de cada widget transformaria 2 widgets em 102 propriedades; o Designer também só grava
 o que mudou.
+
+São três controles: a caixa, o botão e a caixa de marcar. A caixa não tem tipo nem papel fixo: o
+papel vem das ligações. Nenhum botão usa → texto fixo (um título); entrada de um botão → a pessoa
+digita; saída → mostra o que a função devolveu; as duas → digita, e o resultado aparece nela.
 """
 import json
 import re
@@ -17,14 +21,15 @@ from pathlib import Path
 TAMANHOS = {"pequena": (480, 360), "intermediaria": (960, 640), "cheia": (1920, 1080)}
 NOME_TAMANHO = {"pequena": "Pequena", "intermediaria": "Intermediária", "cheia": "Tela cheia"}
 
-# tipo do PyMorph → classe Qt gravada no .ui
-CLASSE = {"rotulo": "QLabel", "resultado": "QLabel", "botao": "QPushButton", "marcar": "QCheckBox",
-          "decimal": "QLineEdit", "inteiro": "QLineEdit", "texto": "QLineEdit"}
-CAMPOS = {"decimal", "inteiro", "texto", "marcar"}
-NOME_TIPO = {"rotulo": "Rótulo", "resultado": "Resultado", "botao": "Botão", "marcar": "Caixa de marcar",
-             "decimal": "Campo decimal", "inteiro": "Campo inteiro", "texto": "Campo de texto"}
-TAMANHO_PADRAO = {"rotulo": (200, 24), "resultado": (432, 48), "botao": (120, 36), "marcar": (200, 28),
-                  "decimal": (200, 32), "inteiro": (200, 32), "texto": (200, 32)}
+TIPOS = ("caixa", "botao", "marcar")
+ENTRADAS = {"caixa", "marcar"}      # o que pode dar valor a um parâmetro
+NOME_TIPO = {"caixa": "Caixa", "botao": "Botão", "marcar": "Caixa de marcar"}
+TAMANHO_PADRAO = {"caixa": (200, 32), "botao": (120, 36), "marcar": (200, 28)}
+# os tipos da 0.0.1/0.0.2 viraram a caixa: o papel agora vem das ligações
+ANTIGOS = {"rotulo", "resultado", "decimal", "inteiro", "texto"}
+
+# o papel da caixa → como ela se apresenta
+TEXTO, ENTRADA, SAIDA, ENTRADA_E_SAIDA = "texto", "entrada", "saida", "entrada e saída"
 ESTILO_RESULTADO = "border: 1px solid #c3c9d0; border-radius: 6px; padding: 6px; background: #f7f8f9;"
 PONTOS_RESULTADO = 14   # a fonte do resultado vai no .ui, e não no estilo, para o zoom escalar
 
@@ -37,7 +42,9 @@ class Elemento:
     y: int
     largura: int
     altura: int
-    texto: str = ""     # rótulo e botão: o texto; campo: a dica dentro dele; resultado: o texto inicial
+    texto: str = ""     # caixa de entrada: a dica apagada dentro dela; o resto: o texto que aparece
+    fonte: int = 0      # tamanho da letra em pontos; 0 é o padrão do sistema
+    negrito: bool = False
 
     def contem(self, x, y, folga=0):
         return (self.x - folga <= x <= self.x + self.largura + folga
@@ -74,6 +81,19 @@ class Tela:
             n += 1
         return f"{base}_{n}"
 
+    def papel(self, id_):
+        """O papel de uma caixa, pelas ligações: TEXTO, ENTRADA, SAIDA ou ENTRADA_E_SAIDA."""
+        entrada = any(id_ in lig.entradas.values() for lig in self.ligacoes.values())
+        saida = any(lig.saida == id_ for lig in self.ligacoes.values())
+        return {(False, False): TEXTO, (True, False): ENTRADA, (False, True): SAIDA,
+                (True, True): ENTRADA_E_SAIDA}[entrada, saida]
+
+    def classe(self, e):
+        """A classe Qt do elemento no .ui; a da caixa depende do papel."""
+        if e.tipo == "caixa":
+            return "QLineEdit" if self.papel(e.id) in (ENTRADA, ENTRADA_E_SAIDA) else "QLabel"
+        return {"botao": "QPushButton", "marcar": "QCheckBox"}[e.tipo]
+
     def mudar_tamanho(self, tamanho):
         self.tamanho = tamanho
         self.largura, self.altura = TAMANHOS[tamanho]
@@ -85,8 +105,7 @@ class Tela:
         if y is None:
             y = self.proxima_linha()
         if texto is None:
-            texto = {"rotulo": "Rótulo", "botao": "Botão", "marcar": "Opção", "resultado": "—",
-                     "decimal": "0,00", "inteiro": "0", "texto": ""}[tipo]
+            texto = {"caixa": "Texto", "botao": "Botão", "marcar": "Opção"}[tipo]
         elemento = Elemento(self.novo_id(tipo), tipo, x, y, largura, altura, texto)
         self.elementos.append(elemento)
         return elemento
@@ -141,17 +160,23 @@ class Tela:
         _geometria(raiz, 0, 0, self.largura, self.altura)
         _texto(raiz, "windowTitle", self.nome)
         for e in self.elementos:
-            w = ET.SubElement(raiz, "widget", {"class": CLASSE[e.tipo], "name": e.id})
+            classe = self.classe(e)
+            w = ET.SubElement(raiz, "widget", {"class": classe, "name": e.id})
             _geometria(w, e.x, e.y, e.largura, e.altura)
-            if e.tipo in ("decimal", "inteiro", "texto"):
+            if classe == "QLineEdit":
                 if e.texto:
                     _texto(w, "placeholderText", e.texto)
             else:
                 _texto(w, "text", e.texto)
-            if e.tipo == "resultado":
-                _texto(w, "styleSheet", ESTILO_RESULTADO)
-                prop = ET.SubElement(w, "property", name="font")
-                ET.SubElement(ET.SubElement(prop, "font"), "pointsize").text = str(PONTOS_RESULTADO)
+            if e.fonte or e.negrito:
+                fonte = ET.SubElement(ET.SubElement(w, "property", name="font"), "font")
+                if e.fonte:
+                    ET.SubElement(fonte, "pointsize").text = str(e.fonte)
+                if e.negrito:
+                    ET.SubElement(fonte, "bold").text = "true"
+            if classe == "QLabel":
+                if self.papel(e.id) == SAIDA:
+                    _texto(w, "styleSheet", ESTILO_RESULTADO)
                 prop = ET.SubElement(w, "property", name="wordWrap")
                 ET.SubElement(prop, "bool").text = "true"
             prop = ET.SubElement(w, "property", name="pymorphTipo", stdset="0")
@@ -168,11 +193,16 @@ class Tela:
         for w in raiz.findall("widget"):
             props = {p.get("name"): p for p in w.findall("property")}
             tipo = props["pymorphTipo"].findtext("string") if "pymorphTipo" in props else None
-            tipo = tipo or {v: k for k, v in CLASSE.items()}.get(w.get("class"), "rotulo")
+            tipo = tipo or {"QPushButton": "botao", "QCheckBox": "marcar"}.get(w.get("class"), "caixa")
+            if tipo in ANTIGOS:
+                tipo = "caixa"
             x, y, largura, altura = _ler_geometria(w)
-            chave = "placeholderText" if tipo in ("decimal", "inteiro", "texto") else "text"
+            chave = "placeholderText" if w.get("class") == "QLineEdit" else "text"
             texto = (props[chave].findtext("string") or "") if chave in props else ""
-            tela.elementos.append(Elemento(w.get("name"), tipo, x, y, largura, altura, texto))
+            fonte = props["font"].find("font") if "font" in props else None
+            pontos = int(fonte.findtext("pointsize") or 0) if fonte is not None else 0
+            negrito = fonte is not None and fonte.findtext("bold") == "true"
+            tela.elementos.append(Elemento(w.get("name"), tipo, x, y, largura, altura, texto, pontos, negrito))
         if json_.exists():
             dados = json.loads(json_.read_text(encoding="utf-8"))
             tela.tamanho = dados.get("tamanho", tela.tamanho)
@@ -207,10 +237,11 @@ def _rotulo(nome):
 
 
 def gerar_da_funcao(tela, funcao):
-    """Cria o que falta para a função rodar: um campo por parâmetro, o botão e o resultado.
+    """Cria o que falta para a função rodar: um título e uma caixa por parâmetro, o botão e, se ela
+    devolve um valor, a caixa do resultado. Função que não devolve nada é uma ação: só o botão.
 
-    Campo que já existe com o mesmo parâmetro é reaproveitado: somar, multiplicar e dividir
-    de (a, b) dividem os mesmos dois campos e o mesmo resultado, cada uma com o seu botão.
+    Caixa que já existe com o mesmo parâmetro é reaproveitada: somar, multiplicar e dividir de
+    (a, b) dividem as mesmas duas caixas e o mesmo resultado, cada uma com o seu botão.
     Devolve o botão criado.
     """
     x = 24
@@ -223,11 +254,11 @@ def gerar_da_funcao(tela, funcao):
                 tela.elementos.append(Elemento(campo_id, "marcar", x, y, 200, 28, _rotulo(p.nome)))
                 y += 28 + 12
             else:
-                tela.elementos.append(Elemento(tela.novo_id(f"rotulo_{p.nome}"), "rotulo", x, y, 200, 22,
+                tela.elementos.append(Elemento(tela.novo_id(f"titulo_{p.nome}"), "caixa", x, y, 200, 22,
                                                _rotulo(p.nome)))
                 y += 24
-                dica = {"decimal": "0,00", "inteiro": "0"}.get(p.controle, p.padrao or "")
-                tela.elementos.append(Elemento(campo_id, p.controle, x, y, 200, 32, dica))
+                dica = {"float": "0,00", "int": "0"}.get(p.tipo, p.padrao or "")
+                tela.elementos.append(Elemento(campo_id, "caixa", x, y, 200, 32, dica))
                 y += 32 + 12
         entradas[p.nome] = campo_id
 
@@ -242,11 +273,15 @@ def gerar_da_funcao(tela, funcao):
     botao = Elemento(tela.novo_id(f"botao_{funcao.nome}"), "botao", bx, by, 120, 36, _rotulo(funcao.nome))
     tela.elementos.append(botao)
 
-    resultado = tela.elemento("resultado")
-    if resultado is None:
-        resultado = Elemento("resultado", "resultado", x, by + 36 + 16, min(432, tela.largura - 48), 48, "—")
-        tela.elementos.append(resultado)
-    elif resultado.contem(bx + 1, by + 1) or by + 36 > resultado.y:
-        resultado.y = by + 36 + 16
-    tela.ligacoes[botao.id] = Ligacao(funcao.chave, entradas, resultado.id)
+    saida = None
+    if funcao.devolve:
+        resultado = tela.elemento("resultado")
+        if resultado is None:
+            resultado = Elemento("resultado", "caixa", x, by + 36 + 16, min(432, tela.largura - 48), 48, "—",
+                                 PONTOS_RESULTADO)
+            tela.elementos.append(resultado)
+        elif resultado.contem(bx + 1, by + 1) or by + 36 > resultado.y:
+            resultado.y = by + 36 + 16
+        saida = resultado.id
+    tela.ligacoes[botao.id] = Ligacao(funcao.chave, entradas, saida)
     return botao
