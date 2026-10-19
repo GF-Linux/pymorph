@@ -1,5 +1,13 @@
 # Mudanças
 
+## 0.0.8
+
+- corrigido: a caixa padrão sumia do palco. O contorno tracejado tinha ficado só para a caixa vazia (e a
+  caixa nova nasce com "Texto"); voltou para toda caixa sem fundo nem borda. Os textos do layout do PNG,
+  de fundo transparente escolhido, continuam sem ele.
+- o palco tem o fundo da janela do sistema, o mesmo da tela quando roda: com branco fixo, no tema escuro
+  o texto das caixas saía branco sobre branco. O tracejado e a grade tiram a cor do tema.
+
 ## 0.0.7
 
 - **o layout de uma imagem (PNG):** a captura de tela de um programa vira o esqueleto editável —

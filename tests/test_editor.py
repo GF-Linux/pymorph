@@ -139,3 +139,43 @@ def test_a_caixa_escolhe_fonte_e_cores(calculadora, app, config):
     assert (caixa.familia, caixa.cor, caixa.fundo) == ("serif", "#b3261e", "#fff4d6")
     corpo.findChild(QWidget, "cor_fundo").escolher("")          # o × volta ao padrão
     assert "background" not in editor.palco.widgets["caixa"].styleSheet()
+
+
+def test_a_caixa_padrao_aparece_no_palco_em_qualquer_tema(calculadora, app, config):
+    """A caixa nova (com "Texto", sem fundo nem borda) tem o contorno tracejado, e o palco tem o fundo da
+    janela do sistema: com branco fixo, no tema escuro o texto saía branco sobre branco."""
+    from PySide6.QtGui import QColor, QPalette
+    original = QPalette(app.palette())
+    escuro = QPalette(original)
+    escuro.setColor(QPalette.ColorRole.Window, QColor("#202326"))
+    escuro.setColor(QPalette.ColorRole.WindowText, QColor("#fcfcfc"))
+    try:
+        for paleta in (original, escuro):
+            app.setPalette(paleta)      # o tema do sistema chega assim, pela aplicação
+            editor = Editor(calculadora, config=config)
+            editor._adicionar("caixa")
+            e = editor.tela.elementos[-1]
+            editor.palco.selecionado = None
+            imagem = editor.palco.grab().toImage()
+            fundo = QColor(imagem.pixel(e.x + e.largura + 20, e.y + e.altura // 2 + 1))
+            assert fundo == paleta.color(QPalette.ColorRole.Window)
+            borda = [QColor(imagem.pixel(e.x + e.largura // 2 + d, e.y)) for d in range(6)]
+            assert any(c != fundo for c in borda)          # o tracejado na borda de cima
+            letras = [QColor(imagem.pixel(x, y)) for x in range(e.x, e.x + 40) for y in range(e.y, e.y + e.altura)]
+            assert any(abs(c.lightness() - fundo.lightness()) > 80 for c in letras)
+    finally:
+        app.setPalette(original)
+
+
+def test_o_texto_do_png_nao_ganha_tracejado(calculadora, app, config):
+    from pymorph.editor import Moldura
+    from pymorph.tela import Elemento
+    editor = Editor(calculadora, config=config)
+    e = Elemento("caixa_1", "caixa", 300, 300, 120, 24, "[a preencher]")
+    e.fundo = "transparent"
+    editor.tela.elementos.append(e)
+    editor.palco.reconstruir()
+    editor.palco.selecionado = None
+    imagem = editor.palco.grab().toImage()
+    fundo = imagem.pixel(e.x + 60, e.y - 6)
+    assert all(imagem.pixel(e.x + 60 + d, e.y) == fundo for d in range(6))

@@ -9,7 +9,8 @@ from functools import cache
 from pathlib import Path
 
 from PySide6.QtCore import QFileSystemWatcher, QPoint, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QAction, QColor, QFont, QFontDatabase, QFontMetrics, QIcon, QKeySequence, QPainter, QPen
+from PySide6.QtGui import (QAction, QColor, QFont, QFontDatabase, QFontMetrics, QIcon, QKeySequence, QPainter,
+                           QPalette, QPen)
 from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QFileDialog, QFormLayout,
                                QGridLayout, QHBoxLayout,
                                QLabel, QLineEdit,
@@ -317,7 +318,7 @@ class Galeria(QWidget):
 
 class Moldura(QWidget):
     """Camada por cima do palco: a seleção, a alça de tamanho, a marca de botão ligado e o contorno
-    tracejado da caixa de texto que, vazia e sem fundo, sumiria do palco."""
+    tracejado da caixa de texto sem fundo nem borda, que sem ele não mostraria onde começa e termina."""
 
     def __init__(self, palco):
         super().__init__(palco)
@@ -329,10 +330,13 @@ class Moldura(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         tela = self.palco.tela
         for e in tela.elementos:
-            invisivel = not e.texto and e.fundo in ("", "transparent") and e.borda_largura <= 0 and not e.original
+            # fundo "transparent" é escolha (é o que o layout do PNG põe nos textos): ali o contorno só polui
+            invisivel = e.fundo == "" and e.borda_largura <= 0 and not e.borda_cor and not e.original
             if e.tipo == "caixa" and tela.papel(e.id) == TEXTO and invisivel:
                 p.setBrush(Qt.BrushStyle.NoBrush)
-                p.setPen(QPen(QColor("#c3c9d0"), 1, Qt.PenStyle.DashLine))
+                tracejado = self.palette().color(QPalette.ColorRole.WindowText)
+                tracejado.setAlpha(110)
+                p.setPen(QPen(tracejado, 1, Qt.PenStyle.DashLine))
                 p.drawRect(QRect(e.x, e.y, e.largura - 1, e.altura - 1))
             elif e.tipo == "botao":
                 p.setPen(Qt.PenStyle.NoPen)
@@ -511,9 +515,14 @@ class Palco(QWidget):
             super().keyPressEvent(ev)
 
     def paintEvent(self, _):
+        # o fundo é o da janela do sistema, o mesmo da tela quando roda: com branco fixo, no tema escuro
+        # o texto das caixas (que segue o sistema) saía branco sobre branco
         p = QPainter(self)
-        p.fillRect(self.rect(), QColor("#ffffff"))
-        p.setPen(QColor("#dfe3e8"))
+        fundo = self.palette().color(QPalette.ColorRole.Window)
+        p.fillRect(self.rect(), fundo)
+        ponto = self.palette().color(QPalette.ColorRole.WindowText)
+        ponto.setAlpha(40)
+        p.setPen(ponto)
         for x in range(0, self.width(), GRADE * 2):
             for y in range(0, self.height(), GRADE * 2):
                 p.drawPoint(x, y)
