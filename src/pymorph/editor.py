@@ -8,17 +8,17 @@ import re
 from functools import cache
 from pathlib import Path
 
-from PySide6.QtCore import QFileSystemWatcher, QPoint, QRect, Qt, Signal
-from PySide6.QtGui import QAction, QColor, QFont, QFontDatabase, QKeySequence, QPainter, QPen
+from PySide6.QtCore import QFileSystemWatcher, QPoint, QRect, QSize, Qt, Signal
+from PySide6.QtGui import QAction, QColor, QFont, QFontDatabase, QFontMetrics, QIcon, QKeySequence, QPainter, QPen
 from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QFormLayout, QGridLayout, QHBoxLayout,
                                QLabel, QLineEdit,
                                QMainWindow, QMessageBox, QPushButton, QScrollArea, QSpinBox, QSplitter,
-                               QToolBar, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
+                               QToolBar, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
-from pymorph import __version__, executor
+from pymorph import __version__, executor, galeria
 from pymorph.leitor import funcoes_por_chave, ler_pasta
 from pymorph.tela import (ENTRADA, ENTRADA_E_SAIDA, ENTRADAS, NOME_TAMANHO, NOME_TIPO, SAIDA, TAMANHOS, TEXTO,
-                          TIPOS, Ligacao, Tela, estilo, gerar_da_funcao)
+                          TIPOS, Elemento, Ligacao, Tela, estilo, gerar_da_funcao)
 
 USO = {TEXTO: "texto fixo, como um título. Vira entrada quando um botão lê dela, e mostra o "
              "resultado quando um botão manda a saída para ela.",
@@ -29,6 +29,7 @@ USO = {TEXTO: "texto fixo, como um título. Vira entrada quando um botão lê de
 DICA_TIPO = {"caixa": "Texto, entrada ou resultado: o papel vem das ligações dos botões",
              "botao": "Chama uma função", "marcar": "Sim ou não"}
 
+SOMBRA_SUAVE = "0 4 12 #40000000"
 GRADE = 8           # o arrasto encaixa de 8 em 8 px; com Shift, livre
 AZUL = QColor("#1f5fbf")
 LARANJA = QColor("#b5560f")
@@ -110,6 +111,8 @@ def criar_widget(elemento, pai, papel=TEXTO):
         fonte.setBold(elemento.negrito)
         w.setFont(fonte)
     w.setObjectName(elemento.id)
+    if elemento.sombra:
+        executor.aplicar_sombra(w, elemento.sombra)
     w.setGeometry(elemento.x, elemento.y, elemento.largura, elemento.altura)
     w.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
     w.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -119,7 +122,127 @@ def criar_widget(elemento, pai, papel=TEXTO):
 
 def _contraste(cor):
     """Preto ou branco, o que se lê melhor sobre a cor."""
-    return "#000000" if QColor(cor).lightnessF() > 0.55 else "#ffffff"
+    c = QColor(cor)
+    return "#000000" if not c.isValid() or c.alphaF() < 0.4 or c.lightnessF() > 0.55 else "#ffffff"
+
+
+def caber_texto(e, folga=32):     # 12 px de espaço interno de cada lado, e uma sobra
+    """Um estilo pronto traz o tamanho de letra do original, mas o tamanho do elemento é de quem
+    desenha: a letra diminui até o texto caber (nunca aumenta)."""
+    if not e.fonte or not e.texto:
+        return
+    letra = QFont(e.familia) if e.familia else QFont()
+    letra.setBold(e.negrito)
+    while e.fonte > 7:
+        letra.setPointSize(e.fonte)
+        if QFontMetrics(letra).horizontalAdvance(e.texto) <= e.largura - folga:
+            return
+        e.fonte -= 1
+
+
+# ── a galeria de prontos ─────────────────────────────────────────────────────
+
+_MINIATURAS = {}
+
+
+def miniatura(item, largura=108):     # duas colunas cabem no painel de 300 px
+    """O item desenhado pelo próprio PyMorph (o que se vê é o que se aplica), guardado depois da 1ª vez."""
+    chave = (item["id"] if item else "padrão", largura, item["tipo"] if item and "tipo" in item else "")
+    if chave in _MINIATURAS:
+        return _MINIATURAS[chave]
+    folga = 14
+    fundo = QWidget()
+    fundo.setObjectName("fundo")
+    fundo.setStyleSheet("QWidget#fundo { background: #ffffff; }")
+    fundo.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
+    tela = Tela()
+    if item is not None and "elementos" in item:          # um layout
+        fundo.resize(item["largura"], item["altura"])
+        for i, campos in enumerate(item["elementos"]):
+            e = Elemento(f"e{i}", **{k: v for k, v in campos.items() if k in Elemento.__dataclass_fields__})
+            tela.elementos.append(e)
+            criar_widget(e, fundo, tela.papel(e.id))
+    else:                                                  # um estilo, num botão ou caixa de exemplo
+        tipo = item["tipo"] if item else "botao"
+        e = Elemento("exemplo", tipo, folga, folga, largura - 2 * folga, 40 if tipo == "botao" else 34,
+                     "Botão" if tipo == "botao" else "Texto", digitavel=tipo == "caixa")
+        if item is not None:
+            for campo, valor in item["visual"].items():
+                if hasattr(e, campo):
+                    setattr(e, campo, valor)
+            caber_texto(e)
+        fundo.resize(largura, e.altura + 2 * folga)
+        tela.elementos.append(e)
+        criar_widget(e, fundo, tela.papel(e.id))
+    fundo.show()
+    imagem = fundo.grab()
+    fundo.deleteLater()
+    if imagem.width() > largura:
+        imagem = imagem.scaledToWidth(largura, Qt.TransformationMode.SmoothTransformation)
+    _MINIATURAS[chave] = imagem
+    return imagem
+
+
+class Galeria(QWidget):
+    """Os prontos em páginas de 12, em duas colunas; um clique escolhe."""
+    POR_PAGINA = 12
+
+    def __init__(self, itens, ao_escolher, com_padrao=False, parent=None):
+        super().__init__(parent)
+        self.ao_escolher = ao_escolher
+        self.com_padrao = com_padrao
+        self.pagina = 0
+        col = QVBoxLayout(self)
+        col.setContentsMargins(0, 0, 0, 0)
+        barra = QHBoxLayout()
+        self.voltar, self.avancar = QPushButton("‹"), QPushButton("›")
+        for b in (self.voltar, self.avancar):
+            b.setFixedWidth(32)
+        self.voltar.clicked.connect(lambda: self._ir(-1))
+        self.avancar.clicked.connect(lambda: self._ir(1))
+        self.contagem = QLabel()
+        self.contagem.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        barra.addWidget(self.voltar)
+        barra.addWidget(self.contagem, 1)
+        barra.addWidget(self.avancar)
+        col.addLayout(barra)
+        self.grade = QGridLayout()
+        self.grade.setSpacing(6)
+        col.addLayout(self.grade)
+        self.mudar_itens(itens)
+
+    def mudar_itens(self, itens):
+        self.itens = ([None] if self.com_padrao else []) + list(itens)
+        self.pagina = 0
+        self._mostrar()
+
+    def _ir(self, passo):
+        paginas = max(1, -(-len(self.itens) // self.POR_PAGINA))
+        self.pagina = (self.pagina + passo) % paginas
+        self._mostrar()
+
+    def _mostrar(self):
+        while self.grade.count():
+            descartar(self.grade.takeAt(0).widget())
+        inicio = self.pagina * self.POR_PAGINA
+        parte = self.itens[inicio:inicio + self.POR_PAGINA]
+        for i, item in enumerate(parte):
+            b = QToolButton()
+            b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+            imagem = miniatura(item)
+            b.setIcon(QIcon(imagem))
+            b.setIconSize(imagem.size())
+            b.setMinimumSize(QSize(imagem.width() + 8, imagem.height() + 8))
+            b.setToolTip("Sem estilo: volta ao padrão" if item is None else
+                         f"{item.get('categoria', NOME_TIPO.get(item.get('tipo'), ''))} de {galeria.credito(item)}"
+                         f"\nparecença com o original: {round(item['nota'] * 100)}%")
+            b.clicked.connect(lambda _=False, it=item: self.ao_escolher(it))
+            self.grade.addWidget(b, i // 2, i % 2)
+        total = len(self.itens)
+        self.contagem.setText(f"{inicio + 1 if total else 0}–{inicio + len(parte)} de {total}" if total
+                              else "catálogo vazio")
+        self.voltar.setEnabled(total > self.POR_PAGINA)
+        self.avancar.setEnabled(total > self.POR_PAGINA)
 
 
 class Moldura(QWidget):
@@ -321,6 +444,7 @@ class PainelPropriedades(QScrollArea):
             dica.setWordWrap(True)
             dica.setStyleSheet("color: #59616b;")
             form.addRow(dica)
+            self._prontos_da_tela(form)
             self.setWidget(corpo)
             return
 
@@ -351,6 +475,34 @@ class PainelPropriedades(QScrollArea):
         form.addRow("", negrito)
         form.addRow("Cor do texto", self._seletor_cor(e, "cor"))
         form.addRow("Fundo", self._seletor_cor(e, "fundo"))
+        borda = self._numero(e, "borda_largura", 20, {-1: "padrão", 0: "sem borda"})
+        linha = QWidget()
+        lado = QHBoxLayout(linha)
+        lado.setContentsMargins(0, 0, 0, 0)
+        lado.addWidget(borda)
+        lado.addWidget(self._seletor_cor(e, "borda_cor"), 1)
+        form.addRow("Borda", linha)
+        form.addRow("Cantos", self._numero(e, "raio", 60, {-1: "padrão"}))
+        espaco = QLineEdit(e.espaco)
+        espaco.setPlaceholderText("padrão (ex.: 8px 16px)")
+        espaco.editingFinished.connect(lambda: self._mudar(e, "espaco", espaco.text().strip()))
+        form.addRow("Espaço interno", espaco)
+        sombra = QCheckBox("Sombra")
+        sombra.setChecked(bool(e.sombra))
+        sombra.setToolTip(e.sombra or "liga uma sombra suave; a dos prontos vem com a medida deles")
+        sombra.toggled.connect(lambda v: self._mudar(e, "sombra", (e.sombra or SOMBRA_SUAVE) if v else ""))
+        form.addRow("", sombra)
+        quando = {"botao": "Mouse por cima", "marcar": "Mouse por cima"}.get(
+            e.tipo, "Com o foco" if papel in (ENTRADA, ENTRADA_E_SAIDA) else None)
+        if quando:          # título próprio: rótulo comprido alarga a coluna e empurra o painel para fora
+            form.addRow(self._titulo(quando))
+            form.addRow("Fundo", self._seletor_cor(e, "destaque_fundo"))
+            form.addRow("Texto", self._seletor_cor(e, "destaque_cor"))
+        if e.tipo == "caixa":
+            digitavel = QCheckBox("De digitar, mesmo sem ligação")
+            digitavel.setChecked(e.digitavel)
+            digitavel.toggled.connect(lambda v: self._mudar(e, "digitavel", v, tudo=True))
+            form.addRow("", digitavel)
         for campo, rotulo, limite in (("x", "X", self.tela.largura), ("y", "Y", self.tela.altura),
                                       ("largura", "Largura", self.tela.largura),
                                       ("altura", "Altura", self.tela.altura)):
@@ -363,7 +515,67 @@ class PainelPropriedades(QScrollArea):
             form.addRow(rotulo, caixa)
         if e.tipo == "botao":
             self._ligacao(form, e)
+        if e.tipo in ("botao", "caixa"):
+            form.addRow(self._titulo("Estilos prontos", "#174a94"))
+            form.addRow(Galeria(galeria.estilos(e.tipo), lambda item: self._aplicar_estilo([e], item),
+                                com_padrao=True))
         self.setWidget(corpo)
+
+    def _prontos_da_tela(self, form):
+        """Sem nada selecionado: um estilo vale para todos os elementos do tipo; um layout entra na tela."""
+        form.addRow(self._titulo("Estilos prontos", "#174a94"))
+        tipo = self._caixa_escolha()
+        tipo.addItem("Botões", "botao")
+        tipo.addItem("Caixas", "caixa")
+        form.addRow("Para todos os", tipo)
+        estilos = Galeria(galeria.estilos("botao"), lambda item: self._aplicar_estilo(
+            [x for x in self.tela.elementos if x.tipo == tipo.currentData()], item), com_padrao=True)
+        tipo.currentIndexChanged.connect(lambda _: estilos.mudar_itens(galeria.estilos(tipo.currentData())))
+        form.addRow(estilos)
+
+        form.addRow(self._titulo("Layouts prontos", "#174a94"))
+        categoria = self._caixa_escolha()
+        for nome in ("Formulário", "Card"):
+            categoria.addItem(nome + "s", nome)
+        form.addRow("Mostrar", categoria)
+        layouts = Galeria(galeria.layouts("Formulário"), self._importar_layout)
+        categoria.currentIndexChanged.connect(lambda _: layouts.mudar_itens(galeria.layouts(categoria.currentData())))
+        form.addRow(layouts)
+        aviso = QLabel("Do Galaxy (Uiverse.io, MIT). O desenho vem pronto; os textos vêm “[a preencher]”. "
+                       "O crédito de cada autor fica salvo com a tela.")
+        aviso.setWordWrap(True)
+        aviso.setStyleSheet("color: #59616b; font-size: 11px;")
+        form.addRow(aviso)
+
+    def _aplicar_estilo(self, elementos, item):
+        for e in elementos:
+            galeria.aplicar_estilo(self.tela, e, item)
+            caber_texto(e)
+        quem = "ao padrão" if item is None else f"de {item['autor']} (Uiverse.io)"
+        self.editor.statusBar().showMessage(
+            f"{len(elementos)} elemento(s) com o estilo {quem}" if elementos else "nenhum elemento desse tipo", 5000)
+        self.alterou.emit(elementos[0].id if elementos else "", True)
+        self.mostrar(self.editor.palco.selecionado)
+
+    def _importar_layout(self, item):
+        tamanho = self.tela.tamanho
+        criados = galeria.importar_layout(self.tela, item)
+        mudou = "" if tamanho == self.tela.tamanho else f" A tela passou para {NOME_TAMANHO[self.tela.tamanho]} para caber."
+        self.editor.statusBar().showMessage(
+            f"{item['categoria']} de {item['autor']} (Uiverse.io): {len(criados)} elementos.{mudou}", 8000)
+        self.alterou.emit(criados[0].id if criados else "", True)
+        self.mostrar(None)
+
+    def _numero(self, e, campo, maximo, especiais):
+        caixa = QSpinBox()
+        caixa.setRange(min(especiais), maximo)
+        caixa.setSpecialValueText(especiais[min(especiais)])
+        caixa.setSuffix(" px")
+        caixa.setValue(getattr(e, campo))
+        caixa.valueChanged.connect(lambda v: self._mudar(e, campo, v))
+        if 0 in especiais and min(especiais) < 0:
+            caixa.setToolTip("0 = " + especiais[0])
+        return caixa
 
     def _caixa_familia(self, e):
         """As genéricas primeiro, depois as do sistema; cada nome escrito na própria letra."""
@@ -398,7 +610,7 @@ class PainelPropriedades(QScrollArea):
 
         def mostrar():
             valor = getattr(e, campo)
-            amostra.setText(valor or "padrão")
+            amostra.setText("gradiente" if valor.startswith("qlineargradient") else (valor or "padrão"))
             amostra.setStyleSheet(f"background: {valor}; color: {_contraste(valor)}; text-align: left; "
                                   "padding: 3px 8px; border: 1px solid #c3c9d0; border-radius: 4px;"
                                   if valor else "text-align: left; padding: 3px 8px;")
@@ -435,9 +647,9 @@ class PainelPropriedades(QScrollArea):
                 caixa.setValue(getattr(e, campo))
                 caixa.blockSignals(False)
 
-    def _mudar(self, e, campo, valor):
+    def _mudar(self, e, campo, valor, tudo=False):
         setattr(e, campo, valor)
-        self.alterou.emit(e.id, False)
+        self.alterou.emit(e.id, tudo)
 
     def _renomear(self, e, caixa):
         antigo, novo = e.id, caixa.text().strip()
@@ -684,6 +896,11 @@ class Editor(QMainWindow):
         self._modificou()
 
     def _painel_alterou(self, id_, tudo):
+        if self.tamanho.currentData() != self.tela.tamanho:     # um layout pronto pode aumentar a tela
+            self.tamanho.blockSignals(True)
+            self.tamanho.setCurrentIndex(self.tamanho.findData(self.tela.tamanho))
+            self.tamanho.blockSignals(False)
+            tudo = True
         if tudo:
             self.palco.reconstruir()
         else:

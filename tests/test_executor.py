@@ -148,3 +148,16 @@ def test_o_resultado_volta_com_a_cor_escolhida_depois_de_um_aviso(calculadora, c
     assert "fdf1e7" in rotulo.styleSheet()
     assert _clicar(janela, "botao_dividir", "1", "4") == "0,25"
     assert "background: #174a94" in rotulo.styleSheet() and "color: #ffffff" in rotulo.styleSheet()
+
+
+def test_a_sombra_vai_para_a_tela_rodando_e_escala_no_zoom(calculadora, config):
+    funcoes = funcoes_por_chave(ler_pasta(calculadora))
+    tela = Tela()
+    botao = gerar_da_funcao(tela, funcoes["calculadora.py:somar"])
+    botao.sombra = "0 4 12 #40000000"
+    tela.salvar(calculadora)
+    janela = abrir(calculadora, config=config)
+    efeito = janela.palco.findChild(QPushButton, botao.id).graphicsEffect()
+    assert (efeito.offset().y(), efeito.blurRadius()) == (4, 12)
+    janela.mudar_zoom(1)
+    assert round(janela.palco.findChild(QPushButton, botao.id).graphicsEffect().blurRadius(), 1) == 14.4

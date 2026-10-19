@@ -25,5 +25,8 @@ version = { attr = "pymorph.__version__" }
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+pymorph = ["catalogo/*.json", "catalogo/*.txt"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

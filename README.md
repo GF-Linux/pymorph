@@ -50,12 +50,28 @@ pymorph rodar      ← a tela como o usuário final vê
    - a lista de funções se atualiza sozinha quando o `.py` é salvo;
    - o tamanho do desenho é Pequena (480×360), Intermediária (960×640) ou Tela cheia (1920×1080):
      conveniência de quem desenha, não limite de quem usa.
-3. **Os arquivos** ficam ao lado do seu código, em `telas/`:
+3. **Estilos e layouts prontos**, do [Galaxy](https://github.com/uiverse-io/galaxy) da Uiverse.io (MIT):
+   - **estilos** (474 de botão, 66 de caixa): no painel de um botão ou caixa, um clique aplica ao
+     elemento; com nada selecionado, aplica a todos do tipo. O estilo vira valores do painel (fundo e
+     gradiente, cor, borda, cantos, sombra, letra, cor com o mouse por cima ou com o foco), ajustáveis
+     à mão; a letra diminui se o texto não couber no tamanho que você deu;
+   - **layouts** (Formulários e Cards): com nada selecionado, um clique põe o layout num espaço livre
+     da tela (e aumenta o tamanho do desenho se não couber). O desenho vem; **todo texto vem
+     "[a preencher]"**, e as caixas de digitar já vêm de digitar;
+   - o crédito de cada autor fica salvo com a tela (`creditos` no `.ligacoes.json`), e a licença do
+     Galaxy vai junto com o catálogo (`catalogo/LICENSE-galaxy.txt`);
+   - por que nem todos: o Qt desenha com uma parte do CSS. Nos 3.802 itens do Galaxy, 64% usam
+     `transform`, 48% sombra, 39% `::before/::after`, 36% animação e 32% ícone SVG. O catálogo é
+     gerado por `ferramentas/catalogo_galaxy.py`: abre cada item num navegador embutido, lê o estilo
+     calculado, traduz, desenha com o próprio PyMorph e compara as duas imagens. Só entra o que fica
+     parecido (estilo ≥ 80%, layout ≥ 88%) e com texto legível (contraste ≥ 3). A galeria mostra o
+     desenho do PyMorph: o que você vê é o que entra na tela.
+4. **Os arquivos** ficam ao lado do seu código, em `telas/`:
    - `principal.ui` — o desenho, no formato do Qt Designer (abre nele); leva só o que o PyMorph
      controla, e não as dezenas de propriedades padrão de cada widget;
    - `principal.ligacoes.json` — que função cada botão chama, de onde vêm as entradas, para onde vai a
      saída.
-4. **A tela rodando** (`Executar ▶` no editor, ou `pymorph rodar`):
+5. **A tela rodando** (`Executar ▶` no editor, ou `pymorph rodar`):
    - o desenho vem do `.ui` pelo `QUiLoader`; o seu arquivo só é importado na primeira chamada;
    - cada chamada roda numa thread: a janela não congela num cálculo longo;
    - erro da função vira aviso no lugar do resultado (o traceback fica no texto de ajuda); numa ação,

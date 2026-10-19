@@ -48,7 +48,16 @@ class Elemento:
     negrito: bool = False
     familia: str = ""   # a família da letra: uma do sistema ou genérica (sans-serif, serif…); "" é a padrão
     cor: str = ""       # cor do texto, '#rrggbb'; "" é a padrão
-    fundo: str = ""     # cor de fundo, '#rrggbb'; "" é a padrão
+    fundo: str = ""     # cor de fundo, '#rrggbb' ou um qlineargradient(...); "" é a padrão
+    borda_largura: int = -1     # px; -1 é a padrão, 0 é sem borda
+    borda_cor: str = ""
+    raio: int = -1              # os cantos, em px; -1 é o padrão
+    espaco: str = ""            # o espaço interno (padding do QSS): "8px 16px"
+    sombra: str = ""            # "dx dy desfoque cor": "0 4 12 #40000000" (a cor do Qt é #AARRGGBB)
+    destaque_fundo: str = ""    # no botão, com o mouse por cima; na caixa de digitar, com o foco
+    destaque_cor: str = ""
+    destaque_borda: str = ""
+    digitavel: bool = False     # caixa de digitar mesmo sem ligação (vem assim de um layout pronto)
 
     def contem(self, x, y, folga=0):
         return (self.x - folga <= x <= self.x + self.largura + folga
@@ -70,6 +79,7 @@ class Tela:
     altura: int = TAMANHOS["pequena"][1]
     elementos: list[Elemento] = field(default_factory=list)
     ligacoes: dict[str, Ligacao] = field(default_factory=dict)  # id do botão → ligação
+    creditos: list[str] = field(default_factory=list)   # de onde vieram os estilos e layouts prontos
 
     # ── consulta ──────────────────────────────────────────────────────────
 
@@ -86,17 +96,18 @@ class Tela:
         return f"{base}_{n}"
 
     def papel(self, id_):
-        """O papel de uma caixa, pelas ligações: TEXTO, ENTRADA, SAIDA ou ENTRADA_E_SAIDA."""
-        entrada = any(id_ in lig.entradas.values() for lig in self.ligacoes.values())
+        """O papel de uma caixa, pelas ligações: TEXTO, ENTRADA, SAIDA ou ENTRADA_E_SAIDA. A caixa
+        marcada como de digitar é entrada mesmo antes de um botão ler dela."""
+        e = self.elemento(id_)
+        entrada = (any(id_ in lig.entradas.values() for lig in self.ligacoes.values())
+                   or (e is not None and e.digitavel))
         saida = any(lig.saida == id_ for lig in self.ligacoes.values())
         return {(False, False): TEXTO, (True, False): ENTRADA, (False, True): SAIDA,
                 (True, True): ENTRADA_E_SAIDA}[entrada, saida]
 
     def classe(self, e):
         """A classe Qt do elemento no .ui; a da caixa depende do papel."""
-        if e.tipo == "caixa":
-            return "QLineEdit" if self.papel(e.id) in (ENTRADA, ENTRADA_E_SAIDA) else "QLabel"
-        return {"botao": "QPushButton", "marcar": "QCheckBox"}[e.tipo]
+        return classe_de(e, self.papel(e.id))
 
     def mudar_tamanho(self, tamanho):
         self.tamanho = tamanho
@@ -154,6 +165,8 @@ class Tela:
         ui.write_text(self.para_ui(), encoding="utf-8")
         dados = {"versao": 1, "tamanho": self.tamanho,
                  "ligacoes": {k: asdict(v) for k, v in self.ligacoes.items()}}
+        if self.creditos:
+            dados["creditos"] = self.creditos
         json_.write_text(json.dumps(dados, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return ui, json_
 
@@ -186,10 +199,10 @@ class Tela:
             if classe == "QLabel":
                 prop = ET.SubElement(w, "property", name="wordWrap")
                 ET.SubElement(prop, "bool").text = "true"
-            for nome, valor in (("pymorphCor", e.cor), ("pymorphFundo", e.fundo)):
-                if valor:       # a cor escolhida, para o PyMorph reler sem decifrar o estilo
-                    prop = ET.SubElement(w, "property", name=nome, stdset="0")
-                    ET.SubElement(prop, "string").text = valor
+            visual = {k: getattr(e, k) for k in VISUAIS if getattr(e, k) != PADRAO_VISUAL[k]}
+            if visual:          # o que foi escolhido, para o PyMorph reler sem decifrar o estilo
+                prop = ET.SubElement(w, "property", name="pymorphEstilo", stdset="0")
+                ET.SubElement(prop, "string").text = json.dumps(visual, ensure_ascii=False)
             prop = ET.SubElement(w, "property", name="pymorphTipo", stdset="0")
             ET.SubElement(prop, "string").text = e.tipo
         ET.indent(ui, space=" ")
@@ -214,32 +227,80 @@ class Tela:
             pontos = int(fonte.findtext("pointsize") or 0) if fonte is not None else 0
             negrito = fonte is not None and fonte.findtext("bold") == "true"
             familia = (fonte.findtext("family") or "") if fonte is not None else ""
-            cor, fundo = ((props[n].findtext("string") or "") if n in props else ""
-                          for n in ("pymorphCor", "pymorphFundo"))
-            tela.elementos.append(Elemento(w.get("name"), tipo, x, y, largura, altura, texto, pontos, negrito,
-                                           familia, cor, fundo))
+            e = Elemento(w.get("name"), tipo, x, y, largura, altura, texto, pontos, negrito, familia)
+            for antigo, campo in (("pymorphCor", "cor"), ("pymorphFundo", "fundo")):    # 0.0.4
+                if antigo in props:
+                    setattr(e, campo, props[antigo].findtext("string") or "")
+            if "pymorphEstilo" in props:
+                for k, v in json.loads(props["pymorphEstilo"].findtext("string") or "{}").items():
+                    if k in VISUAIS:
+                        setattr(e, k, v)
+            tela.elementos.append(e)
         if json_.exists():
             dados = json.loads(json_.read_text(encoding="utf-8"))
             tela.tamanho = dados.get("tamanho", tela.tamanho)
             tela.ligacoes = {k: Ligacao(**v) for k, v in dados.get("ligacoes", {}).items()}
+            tela.creditos = dados.get("creditos", [])
         return tela
 
 
+VISUAIS = ("cor", "fundo", "borda_largura", "borda_cor", "raio", "espaco", "sombra", "destaque_fundo",
+           "destaque_cor", "destaque_borda", "digitavel")
+PADRAO_VISUAL = {k: Elemento.__dataclass_fields__[k].default for k in VISUAIS}
+
+
+def classe_de(e, papel):
+    if e.tipo == "caixa":
+        return "QLineEdit" if papel in (ENTRADA, ENTRADA_E_SAIDA) else "QLabel"
+    return {"botao": "QPushButton", "marcar": "QCheckBox"}[e.tipo]
+
+
 def estilo(e, papel):
-    """O estilo (QSS) do elemento: o quadro da caixa de resultado e as cores escolhidas.
-    Com fundo próprio, botão e caixa de digitar ganham borda e cantos: o Qt troca o desenho nativo
-    pelo do estilo, e só a cor deixaria um retângulo chapado."""
+    """O estilo (QSS) do elemento: o quadro da caixa de resultado, as cores, a borda, os cantos, o
+    espaço interno e o destaque (:hover no botão, :focus na caixa de digitar).
+
+    Com aparência própria, botão e caixa de digitar ganham borda e cantos de partida: o Qt troca o
+    desenho nativo pelo do estilo, e só a cor deixaria um retângulo chapado."""
+    classe = classe_de(e, papel)
     d = {}
     if e.tipo == "caixa" and papel == SAIDA:
         d.update(QUADRO)
-    if e.fundo and (e.tipo == "botao" or (e.tipo == "caixa" and papel in (ENTRADA, ENTRADA_E_SAIDA))):
+    proprio = e.fundo or e.borda_largura >= 0 or e.raio >= 0 or e.espaco or e.borda_cor
+    if proprio and classe in ("QPushButton", "QLineEdit"):
         d.update({"border": "1px solid rgba(0, 0, 0, 0.25)", "border-radius": "6px",
-                  "padding": "4px 12px" if e.tipo == "botao" else "2px 6px"})
+                  "padding": "4px 12px" if classe == "QPushButton" else "2px 6px"})
+    if e.borda_largura == 0:
+        d["border"] = "none"
+    elif e.borda_largura > 0 or e.borda_cor:
+        d["border"] = f"{max(1, e.borda_largura)}px solid {e.borda_cor or '#c3c9d0'}"
+    if e.raio >= 0:     # mais que meia altura, o canto passa por cima do texto (e o Qt desenha mal)
+        d["border-radius"] = f"{min(e.raio, min(e.largura, e.altura) // 2)}px"
+    if e.espaco:
+        d["padding"] = e.espaco
     if e.cor:
         d["color"] = e.cor
     if e.fundo:
         d["background"] = e.fundo
-    return "; ".join(f"{k}: {v}" for k, v in d.items()) + ";" if d else ""
+    destaque = {k: v for k, v in (("background", e.destaque_fundo), ("color", e.destaque_cor),
+                                   ("border-color", e.destaque_borda)) if v}
+    pseudo = {"QPushButton": "hover", "QCheckBox": "hover", "QLineEdit": "focus"}.get(classe)
+    css = ""
+    if d:
+        css = f"{classe} {{ " + " ".join(f"{k}: {v};" for k, v in d.items()) + " }"
+    if destaque and pseudo:
+        css += (" " if css else "") + f"{classe}:{pseudo} {{ " + " ".join(f"{k}: {v};" for k, v in destaque.items()) + " }"
+    return css
+
+
+def ler_sombra(sombra):
+    """'0 4 12 #40000000' → (dx, dy, desfoque, cor) ou None."""
+    partes = sombra.split(maxsplit=3)
+    if len(partes) != 4:
+        return None
+    try:
+        return float(partes[0]), float(partes[1]), float(partes[2]), partes[3]
+    except ValueError:
+        return None
 
 
 def _geometria(widget, x, y, largura, altura):

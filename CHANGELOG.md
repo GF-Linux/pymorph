@@ -1,5 +1,18 @@
 # Mudanças
 
+## 0.0.5
+
+- **estilos prontos** (540: 474 de botão, 66 de caixa) e **layouts prontos** (300: 87 formulários, 213
+  cards), traduzidos do Galaxy (Uiverse.io, MIT). Galeria no painel: no elemento, aplica nele; sem
+  seleção, o estilo vale para todos do tipo e o layout entra num espaço livre (a tela cresce se
+  precisar). Texto de layout vem "[a preencher]". Crédito do autor salvo com a tela.
+- **mais aparência no painel:** borda (largura e cor), cantos, espaço interno, sombra, cor com o mouse
+  por cima (botão) ou com o foco (caixa), e "de digitar, mesmo sem ligação" na caixa.
+- `ferramentas/catalogo_galaxy.py` gera o catálogo: navegador embutido com a rede bloqueada, estilo
+  calculado (resolve o Tailwind), destaque lido trocando :hover/:focus por uma classe, tradução,
+  desenho pelo PyMorph, comparação das imagens e filtro de contraste.
+- o canto arredondado não passa de meia altura (o Qt desenhava mal e cobria o texto).
+
 ## 0.0.4
 
 - **fonte:** a lista vem das fontes instaladas no sistema, limpa (só as que escrevem português, sem as

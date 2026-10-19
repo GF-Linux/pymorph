@@ -18,17 +18,32 @@ import traceback
 from functools import partial
 from pathlib import Path
 
-from PySide6.QtCore import QFile, QObject, QRect, QRunnable, QSettings, Qt, QThreadPool, Signal
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtCore import QFile, QObject, QPointF, QRect, QRunnable, QSettings, Qt, QThreadPool, Signal
+from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QCheckBox, QGridLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QWidget
+from PySide6.QtWidgets import (QCheckBox, QGraphicsDropShadowEffect, QGridLayout, QLabel, QLineEdit, QMessageBox,
+                               QPushButton, QWidget)
 
 from pymorph.leitor import funcoes_por_chave, ler_pasta
-from pymorph.tela import Tela
+from pymorph.tela import Tela, ler_sombra
 
 PASSO_ZOOM = 1.2
 ESTILO_AVISO = ("border: 1px solid #e8b48a; border-radius: 6px; padding: 6px; "
                 "background: #fdf1e7; color: #7a3608;")
+
+
+def aplicar_sombra(widget, sombra, escala=1.0):
+    """A sombra do elemento: o QSS não tem box-shadow, o Qt tem o efeito de sombra."""
+    valores = ler_sombra(sombra) if sombra else None
+    if valores is None:
+        widget.setGraphicsEffect(None)
+        return
+    dx, dy, desfoque, cor = valores
+    efeito = QGraphicsDropShadowEffect(widget)
+    efeito.setOffset(QPointF(dx * escala, dy * escala))
+    efeito.setBlurRadius(desfoque * escala)
+    efeito.setColor(QColor(cor))
+    widget.setGraphicsEffect(efeito)
 
 
 class EntradaInvalida(ValueError):
@@ -166,6 +181,11 @@ class Janela(QWidget):
             if ponto > 0:
                 fonte.setPointSizeF(ponto * f)
                 w.setFont(fonte)
+        for e in self.tela.elementos:
+            if e.sombra:
+                w = self.palco.findChild(QWidget, e.id)
+                if w is not None:
+                    aplicar_sombra(w, e.sombra, f)
 
     # ── chamar a função ───────────────────────────────────────────────────
 
