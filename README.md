@@ -50,14 +50,11 @@ pymorph rodar      ← a tela como o usuário final vê
    - a lista de funções se atualiza sozinha quando o `.py` é salvo;
    - o tamanho do desenho é Pequena (480×360), Intermediária (960×640) ou Tela cheia (1920×1080):
      conveniência de quem desenha, não limite de quem usa.
-3. **Estilos e layouts prontos**, do [Galaxy](https://github.com/uiverse-io/galaxy) da Uiverse.io (MIT):
+3. **Estilos prontos**, do [Galaxy](https://github.com/uiverse-io/galaxy) da Uiverse.io (MIT):
    - **estilos** (474 de botão, 66 de caixa): no painel de um botão ou caixa, um clique aplica ao
      elemento; com nada selecionado, aplica a todos do tipo. O estilo vira valores do painel (fundo e
      gradiente, cor, borda, cantos, sombra, letra, cor com o mouse por cima ou com o foco), ajustáveis
      à mão; a letra diminui se o texto não couber no tamanho que você deu;
-   - **layouts** (Formulários e Cards): com nada selecionado, um clique põe o layout num espaço livre
-     da tela (e aumenta o tamanho do desenho se não couber). O desenho vem; **todo texto vem
-     "[a preencher]"**, e as caixas de digitar já vêm de digitar;
    - o crédito de cada autor fica salvo com a tela (`creditos` no `.ligacoes.json`), e a licença do
      Galaxy vai junto com o catálogo (`catalogo/LICENSE-galaxy.txt`);
    - por que nem todos: o Qt desenha com uma parte do CSS. Nos 3.802 itens do Galaxy, 64% usam
@@ -80,12 +77,25 @@ pymorph rodar      ← a tela como o usuário final vê
      primeiro original custa ~205 MB de memória; cada outro, ~2,5 MB;
    - o catálogo é gerado por `ferramentas/originais_galaxy.py` (o tamanho real em 4 instantes da
      animação; o fundo, claro ou escuro, em que o original aparece).
-5. **Os arquivos** ficam ao lado do seu código, em `telas/`:
+5. **O layout de uma imagem (PNG)**: a captura de tela de um programa (o Cursor, o VS Code) vira o
+   esqueleto editável. Com nada selecionado, "Escolher imagem…". A regra:
+   - **o que é desenho vem:** a paleta, as barras e os painéis nas posições e tamanhos de lá, as
+     linhas divisórias, as formas cheias (botões, campos) com a cor e o arredondamento medidos;
+   - **o que é dos outros fica a preencher:** todo texto vira "[a preencher]" (com a cor e o tamanho
+     de letra estimados de lá) e todo ícone ou imagem vira um espaço marcado;
+   - uma imagem do tamanho da tela vai para "Tela cheia" (1920×1080); menores, para o tamanho mais
+     próximo, na escala;
+   - como acha as partes, sem aprendizado de máquina (`png.py`, OpenCV): cortes sucessivos nas bordas
+     de cor que atravessam a região inteira (é assim que interfaces são montadas: a barra de título
+     atravessa tudo, a lateral atravessa o meio); dentro de cada painel, o que difere da cor dele é
+     conteúdo — cheio é forma, baixo e comprido é texto, quadrado é ícone. Uma captura de 1920×1080
+     leva ~0,4 s.
+6. **Os arquivos** ficam ao lado do seu código, em `telas/`:
    - `principal.ui` — o desenho, no formato do Qt Designer (abre nele); leva só o que o PyMorph
      controla, e não as dezenas de propriedades padrão de cada widget;
    - `principal.ligacoes.json` — que função cada botão chama, de onde vêm as entradas, para onde vai a
      saída.
-6. **A tela rodando** (`Executar ▶` no editor, ou `pymorph rodar`):
+7. **A tela rodando** (`Executar ▶` no editor, ou `pymorph rodar`):
    - o desenho vem do `.ui` pelo `QUiLoader`; o seu arquivo só é importado na primeira chamada;
    - cada chamada roda numa thread: a janela não congela num cálculo longo;
    - erro da função vira aviso no lugar do resultado (o traceback fica no texto de ajuda); numa ação,
