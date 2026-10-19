@@ -24,7 +24,7 @@ from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QCheckBox, QGridLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QWidget
 
 from pymorph.leitor import funcoes_por_chave, ler_pasta
-from pymorph.tela import ESTILO_RESULTADO, Tela
+from pymorph.tela import Tela
 
 PASSO_ZOOM = 1.2
 ESTILO_AVISO = ("border: 1px solid #e8b48a; border-radius: 6px; padding: 6px; "
@@ -120,6 +120,7 @@ class Janela(QWidget):
         arquivo.close()
         filhos = self.palco.findChildren(QWidget, options=Qt.FindChildOption.FindDirectChildrenOnly)
         self._base = {w: (w.geometry(), w.font().pointSizeF()) for w in filhos}
+        self._estilo = {w.objectName(): w.styleSheet() for w in filhos}     # para voltar depois de um aviso
 
         grade = QGridLayout(self)
         grade.setContentsMargins(0, 0, 0, 0)
@@ -223,7 +224,7 @@ class Janela(QWidget):
         self.palco.findChild(QPushButton, botao_id).setEnabled(True)
         caixa = self._saida(botao_id)
         if isinstance(caixa, QLabel):
-            caixa.setStyleSheet(ESTILO_RESULTADO)
+            caixa.setStyleSheet(self._estilo.get(caixa.objectName(), ""))
             caixa.setToolTip("")
         if caixa is not None:
             caixa.setText(formatar(valor))

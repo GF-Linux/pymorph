@@ -30,11 +30,16 @@ pymorph rodar      ← a tela como o usuário final vê
 
      | a caixa é… | quando | aparece como |
      |---|---|---|
-     | texto fixo (um título) | nenhum botão usa | texto; letra e negrito ajustáveis |
+     | texto fixo (um título) | nenhum botão usa | texto |
      | entrada | um botão lê dela | campo para digitar |
      | saída | um botão manda o resultado para ela | o resultado, num quadro |
      | entrada e saída | as duas coisas (o visor de uma calculadora) | campo, e o resultado aparece nele |
 
+   - todo elemento tem **fonte**, letra (tamanho), negrito, **cor do texto** e **fundo**. A lista de
+     fontes vem do sistema (só as que escrevem português, uma vez cada, cada nome na própria letra),
+     com as genéricas primeiro (sem serifa, com serifa, monoespaçada, manuscrita), que o sistema de
+     quem usa resolve para a dele. Quer uma letra de quadrinho? A Comic Neue é livre e está no
+     Fedora: `sudo dnf install comic-neue-fonts`, e ela aparece na lista;
    - duplo clique numa função gera um título e uma caixa por parâmetro, o botão e, se ela devolve um
      valor, a caixa do resultado; numa ação, só o botão. Caixas do mesmo parâmetro são reaproveitadas
      (somar, multiplicar e dividir dividem `a`, `b` e o resultado);

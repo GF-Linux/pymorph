@@ -132,3 +132,19 @@ def test_a_acao_roda_e_o_erro_dela_vira_janela_de_aviso(tmp_path, config):
     janela = _rodar(tmp_path, codigo, "f.py:falhar", {"campo_x": "1"}, config)
     assert janela._aviso.text() == "OSError: a pasta não existe"
     assert "Traceback" in janela._aviso.detailedText()
+
+
+def test_o_resultado_volta_com_a_cor_escolhida_depois_de_um_aviso(calculadora, config):
+    funcoes = funcoes_por_chave(ler_pasta(calculadora))
+    tela = Tela()
+    gerar_da_funcao(tela, funcoes["calculadora.py:dividir"])
+    resultado = tela.elemento("resultado")
+    resultado.cor, resultado.fundo, resultado.familia = "#ffffff", "#174a94", "monospace"
+    tela.salvar(calculadora)
+    janela = abrir(calculadora, config=config)
+    rotulo = janela.palco.findChild(QLabel, "resultado")
+    assert rotulo.font().family() == "monospace"
+    assert _clicar(janela, "botao_dividir", "1", "0").startswith("ZeroDivisionError")
+    assert "fdf1e7" in rotulo.styleSheet()
+    assert _clicar(janela, "botao_dividir", "1", "4") == "0,25"
+    assert "background: #174a94" in rotulo.styleSheet() and "color: #ffffff" in rotulo.styleSheet()

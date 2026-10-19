@@ -4,18 +4,21 @@
 onde tudo se arrasta e redimensiona; à direita, as propriedades e a ligação do que está selecionado.
 O seu código nunca é escrito: o editor só grava em telas/.
 """
+import re
+from functools import cache
 from pathlib import Path
 
 from PySide6.QtCore import QFileSystemWatcher, QPoint, QRect, Qt, Signal
-from PySide6.QtGui import QAction, QColor, QFont, QKeySequence, QPainter, QPen
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QGridLayout, QLabel, QLineEdit,
+from PySide6.QtGui import QAction, QColor, QFont, QFontDatabase, QKeySequence, QPainter, QPen
+from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QFormLayout, QGridLayout, QHBoxLayout,
+                               QLabel, QLineEdit,
                                QMainWindow, QMessageBox, QPushButton, QScrollArea, QSpinBox, QSplitter,
                                QToolBar, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from pymorph import __version__, executor
 from pymorph.leitor import funcoes_por_chave, ler_pasta
-from pymorph.tela import (ENTRADA, ENTRADA_E_SAIDA, ENTRADAS, ESTILO_RESULTADO, NOME_TAMANHO, NOME_TIPO,
-                          SAIDA, TAMANHOS, TEXTO, TIPOS, Ligacao, Tela, gerar_da_funcao)
+from pymorph.tela import (ENTRADA, ENTRADA_E_SAIDA, ENTRADAS, NOME_TAMANHO, NOME_TIPO, SAIDA, TAMANHOS, TEXTO,
+                          TIPOS, Ligacao, Tela, estilo, gerar_da_funcao)
 
 USO = {TEXTO: "texto fixo, como um título. Vira entrada quando um botão lê dela, e mostra o "
              "resultado quando um botão manda a saída para ela.",
@@ -29,6 +32,48 @@ DICA_TIPO = {"caixa": "Texto, entrada ou resultado: o papel vem das ligações d
 GRADE = 8           # o arrasto encaixa de 8 em 8 px; com Shift, livre
 AZUL = QColor("#1f5fbf")
 LARANJA = QColor("#b5560f")
+
+
+# as genéricas valem em qualquer máquina: o sistema escolhe a sua (no Fedora, pelo fontconfig:
+# sans-serif → Noto Sans, serif → Noto Serif, monospace → Noto Sans Mono, cursive → Z003)
+GENERICAS = (("Sem serifa", "sans-serif"), ("Com serifa", "serif"), ("Monoespaçada", "monospace"),
+             ("Manuscrita", "cursive"))
+# o que o Qt lista como família, mas é peso ou largura de outra ("Noto Sans ExtraCondensed Thin")
+_VARIANTES = {"Thin", "ExtraLight", "Light", "SemiLight", "Medium", "SemiBold", "Semibold", "Bold", "Extra",
+              "ExtraBold", "Extrabold", "Black", "Condensed", "SemiCondensed", "ExtraCondensed", "Propo"}
+# as Nerd Fonts têm um apelido curto para cada família
+_APELIDOS = ((" NFM", " Nerd Font Mono"), (" NFP", " Nerd Font Propo"), (" NF", " Nerd Font"))
+
+
+def _chave(familia):
+    for curto, longo in _APELIDOS:
+        if familia.endswith(curto) or curto + " " in familia:
+            return familia.replace(curto, longo, 1)
+    return familia
+
+
+@cache
+def familias_do_sistema():
+    """As famílias de letra instaladas que escrevem português, uma vez cada: sem as variantes de
+    peso e largura que o Qt lista como família, sem o fabricante entre colchetes ("C059 [urw]") e
+    sem os apelidos ("JetBrainsMono NF" é a "JetBrainsMono Nerd Font")."""
+    nomes = {}
+    for f in QFontDatabase.families():
+        if (QFontDatabase.isPrivateFamily(f) or "CJK" in f
+                or QFontDatabase.WritingSystem.Latin not in QFontDatabase.writingSystems(f)):
+            continue
+        f = re.sub(r"\s*\[.*\]$", "", f)
+        if f not in ("Sans Serif", "Serif", "Monospace"):
+            nomes.setdefault(_chave(f), f)
+    saida = []
+    for chave, f in nomes.items():
+        palavras = chave.split()
+        if any(" ".join(palavras[:k]) in nomes
+               and all(p in _VARIANTES or (p == "Mono" and palavras[k - 1] == "Font") for p in palavras[k:])
+               for k in range(1, len(palavras))):
+            continue
+        saida.append(f)
+    return sorted(saida, key=str.lower)
 
 
 def _encaixar(valor, livre=False):
@@ -55,10 +100,11 @@ def criar_widget(elemento, pai, papel=TEXTO):
     else:
         w = QLabel(elemento.texto, pai)
         w.setWordWrap(True)
-        if papel == SAIDA:
-            w.setStyleSheet(ESTILO_RESULTADO)
-    if elemento.fonte or elemento.negrito:
+    w.setStyleSheet(estilo(elemento, papel))
+    if elemento.fonte or elemento.negrito or elemento.familia:
         fonte = w.font()
+        if elemento.familia:
+            fonte.setFamily(elemento.familia)
         if elemento.fonte:
             fonte.setPointSize(elemento.fonte)
         fonte.setBold(elemento.negrito)
@@ -69,6 +115,11 @@ def criar_widget(elemento, pai, papel=TEXTO):
     w.setFocusPolicy(Qt.FocusPolicy.NoFocus)
     w.show()
     return w
+
+
+def _contraste(cor):
+    """Preto ou branco, o que se lê melhor sobre a cor."""
+    return "#000000" if QColor(cor).lightnessF() > 0.55 else "#ffffff"
 
 
 class Moldura(QWidget):
@@ -292,11 +343,14 @@ class PainelPropriedades(QScrollArea):
         letra.setSuffix(" pt")
         letra.setValue(e.fonte)
         letra.valueChanged.connect(lambda v: self._mudar(e, "fonte", v))
+        form.addRow("Fonte", self._caixa_familia(e))
         form.addRow("Letra", letra)
         negrito = QCheckBox("Negrito")
         negrito.setChecked(e.negrito)
         negrito.toggled.connect(lambda v: self._mudar(e, "negrito", v))
         form.addRow("", negrito)
+        form.addRow("Cor do texto", self._seletor_cor(e, "cor"))
+        form.addRow("Fundo", self._seletor_cor(e, "fundo"))
         for campo, rotulo, limite in (("x", "X", self.tela.largura), ("y", "Y", self.tela.altura),
                                       ("largura", "Largura", self.tela.largura),
                                       ("altura", "Altura", self.tela.altura)):
@@ -310,6 +364,64 @@ class PainelPropriedades(QScrollArea):
         if e.tipo == "botao":
             self._ligacao(form, e)
         self.setWidget(corpo)
+
+    def _caixa_familia(self, e):
+        """As genéricas primeiro, depois as do sistema; cada nome escrito na própria letra."""
+        caixa = self._caixa_escolha()
+        caixa.addItem("Padrão do sistema", "")
+        for nome, familia in GENERICAS:
+            caixa.addItem(f"{nome} ({familia})", familia)
+        caixa.insertSeparator(caixa.count())
+        for familia in familias_do_sistema():
+            caixa.addItem(familia, familia)
+        for i in range(1, caixa.count()):
+            if caixa.itemData(i):
+                caixa.setItemData(i, QFont(caixa.itemData(i)), Qt.ItemDataRole.FontRole)
+        i = caixa.findData(e.familia)
+        if i < 0:       # escolhida em outra máquina: o Qt usa a mais parecida que houver aqui
+            caixa.addItem(f"{e.familia} (não instalada aqui)", e.familia)
+            i = caixa.count() - 1
+        caixa.setCurrentIndex(i)
+        caixa.setMaxVisibleItems(20)
+        caixa.currentIndexChanged.connect(lambda _: self._mudar(e, "familia", caixa.currentData()))
+        return caixa
+
+    def _seletor_cor(self, e, campo):
+        """Um botão com a amostra da cor (abre o seletor do Qt) e um × que volta ao padrão."""
+        linha = QWidget()
+        caixa = QHBoxLayout(linha)
+        caixa.setContentsMargins(0, 0, 0, 0)
+        amostra = QPushButton()
+        limpar = QPushButton("×")
+        limpar.setFixedWidth(28)
+        limpar.setToolTip("voltar ao padrão")
+
+        def mostrar():
+            valor = getattr(e, campo)
+            amostra.setText(valor or "padrão")
+            amostra.setStyleSheet(f"background: {valor}; color: {_contraste(valor)}; text-align: left; "
+                                  "padding: 3px 8px; border: 1px solid #c3c9d0; border-radius: 4px;"
+                                  if valor else "text-align: left; padding: 3px 8px;")
+            limpar.setEnabled(bool(valor))
+
+        def escolher(valor=None):
+            if valor is None:
+                inicial = QColor(getattr(e, campo) or ("#000000" if campo == "cor" else "#ffffff"))
+                cor = QColorDialog.getColor(inicial, self, "Cor do texto" if campo == "cor" else "Fundo")
+                if not cor.isValid():
+                    return
+                valor = cor.name()
+            self._mudar(e, campo, valor)
+            mostrar()
+
+        amostra.clicked.connect(lambda: escolher())
+        limpar.clicked.connect(lambda: escolher(""))
+        linha.escolher = escolher           # os testes escolhem sem abrir o seletor
+        caixa.addWidget(amostra, 1)
+        caixa.addWidget(limpar)
+        mostrar()
+        linha.setObjectName(f"cor_{campo}")
+        return linha
 
     def atualizar_geometria(self, id_):
         """O mouse mexeu no elemento: só os números, sem refazer o painel (não rouba o foco)."""

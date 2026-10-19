@@ -1,5 +1,14 @@
 # Mudanças
 
+## 0.0.4
+
+- **fonte:** a lista vem das fontes instaladas no sistema, limpa (só as que escrevem português, sem as
+  variantes de peso que o Qt lista como família, sem fabricante e sem apelido), com as genéricas
+  primeiro: sem serifa, com serifa, monoespaçada, manuscrita. Cada nome aparece escrito na própria letra.
+- **cor do texto e fundo** em todo elemento, com o seletor de cor do Qt e um × que volta ao padrão.
+  Botão e caixa de digitar com fundo próprio ganham borda e cantos arredondados.
+- a caixa de resultado volta com as cores escolhidas depois de um aviso de erro.
+
 ## 0.0.3
 
 - **uma caixa só.** Campo decimal, campo inteiro, campo de texto, rótulo e resultado viraram a

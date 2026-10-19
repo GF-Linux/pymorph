@@ -30,7 +30,8 @@ ANTIGOS = {"rotulo", "resultado", "decimal", "inteiro", "texto"}
 
 # o papel da caixa → como ela se apresenta
 TEXTO, ENTRADA, SAIDA, ENTRADA_E_SAIDA = "texto", "entrada", "saida", "entrada e saída"
-ESTILO_RESULTADO = "border: 1px solid #c3c9d0; border-radius: 6px; padding: 6px; background: #f7f8f9;"
+QUADRO = {"border": "1px solid #c3c9d0", "border-radius": "6px", "padding": "6px", "background": "#f7f8f9"}
+ESTILO_RESULTADO = "; ".join(f"{k}: {v}" for k, v in QUADRO.items()) + ";"
 PONTOS_RESULTADO = 14   # a fonte do resultado vai no .ui, e não no estilo, para o zoom escalar
 
 
@@ -45,6 +46,9 @@ class Elemento:
     texto: str = ""     # caixa de entrada: a dica apagada dentro dela; o resto: o texto que aparece
     fonte: int = 0      # tamanho da letra em pontos; 0 é o padrão do sistema
     negrito: bool = False
+    familia: str = ""   # a família da letra: uma do sistema ou genérica (sans-serif, serif…); "" é a padrão
+    cor: str = ""       # cor do texto, '#rrggbb'; "" é a padrão
+    fundo: str = ""     # cor de fundo, '#rrggbb'; "" é a padrão
 
     def contem(self, x, y, folga=0):
         return (self.x - folga <= x <= self.x + self.largura + folga
@@ -168,17 +172,24 @@ class Tela:
                     _texto(w, "placeholderText", e.texto)
             else:
                 _texto(w, "text", e.texto)
-            if e.fonte or e.negrito:
+            if e.fonte or e.negrito or e.familia:
                 fonte = ET.SubElement(ET.SubElement(w, "property", name="font"), "font")
+                if e.familia:
+                    ET.SubElement(fonte, "family").text = e.familia
                 if e.fonte:
                     ET.SubElement(fonte, "pointsize").text = str(e.fonte)
                 if e.negrito:
                     ET.SubElement(fonte, "bold").text = "true"
+            css = estilo(e, self.papel(e.id))
+            if css:
+                _texto(w, "styleSheet", css)
             if classe == "QLabel":
-                if self.papel(e.id) == SAIDA:
-                    _texto(w, "styleSheet", ESTILO_RESULTADO)
                 prop = ET.SubElement(w, "property", name="wordWrap")
                 ET.SubElement(prop, "bool").text = "true"
+            for nome, valor in (("pymorphCor", e.cor), ("pymorphFundo", e.fundo)):
+                if valor:       # a cor escolhida, para o PyMorph reler sem decifrar o estilo
+                    prop = ET.SubElement(w, "property", name=nome, stdset="0")
+                    ET.SubElement(prop, "string").text = valor
             prop = ET.SubElement(w, "property", name="pymorphTipo", stdset="0")
             ET.SubElement(prop, "string").text = e.tipo
         ET.indent(ui, space=" ")
@@ -202,12 +213,33 @@ class Tela:
             fonte = props["font"].find("font") if "font" in props else None
             pontos = int(fonte.findtext("pointsize") or 0) if fonte is not None else 0
             negrito = fonte is not None and fonte.findtext("bold") == "true"
-            tela.elementos.append(Elemento(w.get("name"), tipo, x, y, largura, altura, texto, pontos, negrito))
+            familia = (fonte.findtext("family") or "") if fonte is not None else ""
+            cor, fundo = ((props[n].findtext("string") or "") if n in props else ""
+                          for n in ("pymorphCor", "pymorphFundo"))
+            tela.elementos.append(Elemento(w.get("name"), tipo, x, y, largura, altura, texto, pontos, negrito,
+                                           familia, cor, fundo))
         if json_.exists():
             dados = json.loads(json_.read_text(encoding="utf-8"))
             tela.tamanho = dados.get("tamanho", tela.tamanho)
             tela.ligacoes = {k: Ligacao(**v) for k, v in dados.get("ligacoes", {}).items()}
         return tela
+
+
+def estilo(e, papel):
+    """O estilo (QSS) do elemento: o quadro da caixa de resultado e as cores escolhidas.
+    Com fundo próprio, botão e caixa de digitar ganham borda e cantos: o Qt troca o desenho nativo
+    pelo do estilo, e só a cor deixaria um retângulo chapado."""
+    d = {}
+    if e.tipo == "caixa" and papel == SAIDA:
+        d.update(QUADRO)
+    if e.fundo and (e.tipo == "botao" or (e.tipo == "caixa" and papel in (ENTRADA, ENTRADA_E_SAIDA))):
+        d.update({"border": "1px solid rgba(0, 0, 0, 0.25)", "border-radius": "6px",
+                  "padding": "4px 12px" if e.tipo == "botao" else "2px 6px"})
+    if e.cor:
+        d["color"] = e.cor
+    if e.fundo:
+        d["background"] = e.fundo
+    return "; ".join(f"{k}: {v}" for k, v in d.items()) + ";" if d else ""
 
 
 def _geometria(widget, x, y, largura, altura):

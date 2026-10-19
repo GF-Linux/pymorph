@@ -1,7 +1,7 @@
 from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QMouseEvent
 import shiboken6
-from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QLineEdit, QPushButton
+from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QLineEdit, QPushButton, QWidget
 
 from pymorph.editor import Editor
 from pymorph.tela import Tela
@@ -119,3 +119,23 @@ def test_a_caixa_ajusta_letra_e_negrito(calculadora, app, config):
     editor.salvar()
     caixa = Tela.carregar(calculadora).elemento("caixa")
     assert (caixa.fonte, caixa.negrito, caixa.texto) == (20, True, "Texto")
+
+
+def test_a_caixa_escolhe_fonte_e_cores(calculadora, app, config):
+    from pymorph.editor import familias_do_sistema
+    editor = Editor(calculadora, config=config)
+    editor._adicionar("caixa")
+    editor.painel.mostrar("caixa")
+    corpo = editor.painel.widget()
+    fonte = next(c for c in corpo.findChildren(QComboBox) if c.findData("serif") >= 0)
+    assert fonte.count() > len(familias_do_sistema())          # genéricas + as do sistema
+    fonte.setCurrentIndex(fonte.findData("serif"))
+    corpo.findChild(QWidget, "cor_cor").escolher("#b3261e")
+    corpo.findChild(QWidget, "cor_fundo").escolher("#fff4d6")
+    w = editor.palco.widgets["caixa"]
+    assert w.font().family() == "serif" and "color: #b3261e" in w.styleSheet()
+    editor.salvar()
+    caixa = Tela.carregar(calculadora).elemento("caixa")
+    assert (caixa.familia, caixa.cor, caixa.fundo) == ("serif", "#b3261e", "#fff4d6")
+    corpo.findChild(QWidget, "cor_fundo").escolher("")          # o × volta ao padrão
+    assert "background" not in editor.palco.widgets["caixa"].styleSheet()
