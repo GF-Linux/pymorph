@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QFormLayout, 
                                QMainWindow, QMessageBox, QPushButton, QScrollArea, QSpinBox, QSplitter,
                                QToolBar, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
-from pymorph import __version__, executor, galeria
+from pymorph import __version__, executor, galeria, web
 from pymorph.leitor import funcoes_por_chave, ler_pasta
 from pymorph.tela import (ENTRADA, ENTRADA_E_SAIDA, ENTRADAS, NOME_TAMANHO, NOME_TIPO, SAIDA, TAMANHOS, TEXTO,
                           TIPOS, Elemento, Ligacao, Tela, estilo, gerar_da_funcao)
@@ -90,7 +90,15 @@ def descartar(widget):
 
 def criar_widget(elemento, pai, papel=TEXTO):
     """O widget de verdade, como vai aparecer para o usuário final, mas sem receber clique.
-    A caixa se apresenta pelo papel que as ligações dão a ela (como no .ui)."""
+    A caixa se apresenta pelo papel que as ligações dão a ela (como no .ui). Com um original do
+    Galaxy, é a pele dele, com as animações rodando, mas sem pegar o mouse do palco."""
+    item = web.item(elemento.original) if elemento.original else None
+    if item is not None:
+        w = web.Pele(item, elemento.texto, pai, interativa=False)
+        w.setObjectName(elemento.id)
+        w.setGeometry(elemento.x, elemento.y, elemento.largura, elemento.altura)
+        w.show()
+        return w
     if elemento.tipo == "botao":
         w = QPushButton(elemento.texto, pai)
     elif elemento.tipo == "marcar":
@@ -181,6 +189,67 @@ def miniatura(item, largura=108):     # duas colunas cabem no painel de 300 px
         imagem = imagem.scaledToWidth(largura, Qt.TransformationMode.SmoothTransformation)
     _MINIATURAS[chave] = imagem
     return imagem
+
+
+ORIGINAIS = {"botao": ("Botão",), "caixa": ("Caixa", "Animação"), "marcar": ("Caixa de marcar", "Toggle")}
+NOME_CATEGORIA = {"Botão": "Botões", "Caixa": "Caixas", "Caixa de marcar": "Caixas de marcar", "Toggle": "Toggles",
+                  "Animação": "Animações"}
+
+
+class GaleriaOriginais(QWidget):
+    """Os originais do Galaxy, vivos (com animação), numa vitrine do navegador; páginas de 12."""
+    POR_PAGINA = 12
+    CELULA = (116, 60)
+
+    def __init__(self, categorias, ao_escolher, com_padrao=False, parent=None):
+        super().__init__(parent)
+        self.ao_escolher, self.com_padrao = ao_escolher, com_padrao
+        col = QVBoxLayout(self)
+        col.setContentsMargins(0, 0, 0, 0)
+        self.categoria = PainelPropriedades._caixa_escolha()
+        for c in categorias:
+            self.categoria.addItem(NOME_CATEGORIA[c], c)
+        self.categoria.setVisible(len(categorias) > 1)
+        self.categoria.currentIndexChanged.connect(lambda _: self._trocar())
+        col.addWidget(self.categoria)
+        barra = QHBoxLayout()
+        self.voltar, self.avancar = QPushButton("‹"), QPushButton("›")
+        for b in (self.voltar, self.avancar):
+            b.setFixedWidth(32)
+        self.voltar.clicked.connect(lambda: self._ir(-1))
+        self.avancar.clicked.connect(lambda: self._ir(1))
+        self.contagem = QLabel()
+        self.contagem.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        barra.addWidget(self.voltar)
+        barra.addWidget(self.contagem, 1)
+        barra.addWidget(self.avancar)
+        col.addLayout(barra)
+        self.vitrine = web.Vitrine()
+        self.vitrine.escolheu.connect(self._escolheu)
+        col.addWidget(self.vitrine)
+        self._trocar()
+
+    def _trocar(self):
+        self.itens = web.originais(self.categoria.currentData())
+        self.pagina = 0
+        self._mostrar()
+
+    def _ir(self, passo):
+        paginas = max(1, -(-len(self.itens) // self.POR_PAGINA))
+        self.pagina = (self.pagina + passo) % paginas
+        self._mostrar()
+
+    def _mostrar(self):
+        inicio = self.pagina * self.POR_PAGINA
+        self.parte = self.itens[inicio:inicio + self.POR_PAGINA]
+        celulas = len(self.parte) + (1 if self.com_padrao else 0)
+        self.vitrine.setFixedHeight(-(-celulas // 2) * (self.CELULA[1] + 20) + 6)    # célula + borda + vão
+        self.vitrine.mostrar(self.parte, *self.CELULA, com_padrao=self.com_padrao)
+        total = len(self.itens)
+        self.contagem.setText(f"{inicio + 1}–{inicio + len(self.parte)} de {total}" if total else "catálogo vazio")
+
+    def _escolheu(self, i):
+        self.ao_escolher(None if i < 0 else self.parte[i])
 
 
 class Galeria(QWidget):
@@ -293,21 +362,54 @@ class Palco(QWidget):
         self.reconstruir()
 
     def reconstruir(self):
-        for w in self.widgets.values():
+        antigos, self.widgets = self.widgets, {}
+        for e in self.tela.elementos:
+            self.widgets[e.id] = self._widget(e, antigos.pop(e.id, None))
+            self.widgets[e.id].raise_()         # a ordem da lista é a ordem de quem fica por cima
+        for w in antigos.values():
             descartar(w)
-        self.widgets = {e.id: criar_widget(e, self, self.tela.papel(e.id)) for e in self.tela.elementos}
         self.setFixedSize(self.tela.largura, self.tela.altura)
         self.moldura.setGeometry(self.rect())
         self.moldura.raise_()
         self.moldura.update()
 
+    def _widget(self, e, antigo):
+        """A pele de um original é reaproveitada: recarregar o navegador a cada tecla piscaria e
+        reiniciaria a animação."""
+        if isinstance(antigo, web.Pele) and antigo.chave == e.original:
+            antigo.setGeometry(e.x, e.y, e.largura, e.altura)
+            if antigo.texto != e.texto:
+                antigo.definir_texto(e.texto)
+            antigo.setObjectName(e.id)
+            return antigo
+        if antigo is not None:
+            descartar(antigo)
+        w = criar_widget(e, self, self.tela.papel(e.id))
+        if isinstance(w, web.Pele):
+            w.mediu.connect(lambda largura, altura, id_=e.id: self._crescer(id_, largura, altura))
+        return w
+
+    def _crescer(self, id_, largura, altura):
+        """O original, com o texto de quem desenha, pede mais espaço: o elemento cresce (nunca encolhe
+        sozinho), dentro da tela."""
+        e = self.tela.elemento(id_)
+        if e is None or (largura <= e.largura and altura <= e.altura):
+            return
+        e.largura = min(max(e.largura, largura), self.tela.largura - e.x)
+        e.altura = min(max(e.altura, altura), self.tela.altura - e.y)
+        if id_ in self.widgets:
+            self.widgets[id_].setGeometry(e.x, e.y, e.largura, e.altura)
+        self.moldura.update()
+        self.mudou.emit()
+
     def atualizar(self, id_):
         """Refaz um elemento só (depois de mudar texto, tipo, posição ou tamanho)."""
-        if id_ in self.widgets:
-            descartar(self.widgets.pop(id_))
+        antigo = self.widgets.pop(id_, None)
         e = self.tela.elemento(id_)
         if e is not None:
-            self.widgets[id_] = criar_widget(e, self, self.tela.papel(id_))
+            self.widgets[id_] = self._widget(e, antigo)
+        elif antigo is not None:
+            descartar(antigo)
         self.moldura.raise_()
         self.moldura.update()
 
@@ -373,6 +475,7 @@ class Palco(QWidget):
                  Qt.Key.Key_Up: (0, -passo), Qt.Key.Key_Down: (0, passo)}
         if ev.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
             self.tela.remover(e.id)
+            descartar(self.widgets.pop(e.id))
             self.reconstruir()      # sem o botão, as caixas dele podem mudar de papel
             self.selecionar(None)
             self.mudou.emit()
@@ -515,6 +618,10 @@ class PainelPropriedades(QScrollArea):
             form.addRow(rotulo, caixa)
         if e.tipo == "botao":
             self._ligacao(form, e)
+        if e.tipo in ORIGINAIS:
+            form.addRow(self._titulo("Originais (com animação)", "#174a94"))
+            form.addRow(GaleriaOriginais(ORIGINAIS[e.tipo], lambda item: self._aplicar_original(e, item),
+                                         com_padrao=True))
         if e.tipo in ("botao", "caixa"):
             form.addRow(self._titulo("Estilos prontos", "#174a94"))
             form.addRow(Galeria(galeria.estilos(e.tipo), lambda item: self._aplicar_estilo([e], item),
@@ -532,6 +639,14 @@ class PainelPropriedades(QScrollArea):
             [x for x in self.tela.elementos if x.tipo == tipo.currentData()], item), com_padrao=True)
         tipo.currentIndexChanged.connect(lambda _: estilos.mudar_itens(galeria.estilos(tipo.currentData())))
         form.addRow(estilos)
+
+        form.addRow(self._titulo("Originais (com animação)", "#174a94"))
+        dica = QLabel("Rodam como foram escritos, no navegador embutido. Um clique põe um elemento novo na tela.")
+        dica.setWordWrap(True)
+        dica.setStyleSheet("color: #59616b; font-size: 11px;")
+        form.addRow(dica)
+        form.addRow(GaleriaOriginais(("Botão", "Caixa", "Caixa de marcar", "Toggle", "Animação"),
+                                     self._adicionar_original))
 
         form.addRow(self._titulo("Layouts prontos", "#174a94"))
         categoria = self._caixa_escolha()
@@ -556,6 +671,24 @@ class PainelPropriedades(QScrollArea):
             f"{len(elementos)} elemento(s) com o estilo {quem}" if elementos else "nenhum elemento desse tipo", 5000)
         self.alterou.emit(elementos[0].id if elementos else "", True)
         self.mostrar(self.editor.palco.selecionado)
+
+    def _aplicar_original(self, e, item):
+        galeria.aplicar_original(self.tela, e, item)
+        self.editor.statusBar().showMessage(
+            "de volta ao desenho do Qt" if item is None else
+            f"{item['categoria']} de {item['autor']} (Uiverse.io), {item['largura']}×{item['altura']}", 6000)
+        self.alterou.emit(e.id, True)
+        self.mostrar(e.id)
+
+    def _adicionar_original(self, item):
+        if item is None:
+            return
+        e = galeria.adicionar_original(self.tela, item)
+        if e.y + e.altura > self.tela.altura:
+            e.y = max(0, self.tela.altura - e.altura - 8)
+        self.editor.statusBar().showMessage(f"{item['categoria']} de {item['autor']} (Uiverse.io)", 6000)
+        self.alterou.emit(e.id, True)
+        self.editor.palco.selecionar(e.id)
 
     def _importar_layout(self, item):
         tamanho = self.tela.tamanho

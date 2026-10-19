@@ -137,6 +137,10 @@ class Janela(QWidget):
         self._base = {w: (w.geometry(), w.font().pointSizeF()) for w in filhos}
         self._estilo = {w.objectName(): w.styleSheet() for w in filhos}     # para voltar depois de um aviso
 
+        self._peles = {}
+        if any(e.original for e in tela.elementos):
+            self._vestir()
+
         grade = QGridLayout(self)
         grade.setContentsMargins(0, 0, 0, 0)
         grade.addWidget(self.palco, 1, 1)
@@ -163,6 +167,36 @@ class Janela(QWidget):
         else:
             self._abrir_maximizada = False
 
+    def _vestir(self):
+        """Os originais do Galaxy: a pele (navegador) no lugar do controle, que fica escondido e
+        continua guardando o texto, a marcação e o clique."""
+        from pymorph import web
+        for e in self.tela.elementos:
+            item = web.item(e.original) if e.original else None
+            w = self.palco.findChild(QWidget, e.id)
+            if item is None or w is None:
+                continue
+            pele = web.Pele(item, e.texto, self.palco)
+            pele.setObjectName(f"pele_{e.id}")
+            pele.setGeometry(w.geometry())
+            w.hide()
+            pele.show()
+            self._base[pele] = (w.geometry(), 0.0)
+            self._peles[e.id] = pele
+            if e.tipo == "botao":
+                pele.clicou.connect(partial(self.chamar, e.id))
+            elif e.tipo == "caixa" and isinstance(w, QLineEdit):
+                pele.mudou_valor.connect(w.setText)
+            elif e.tipo == "marcar":
+                pele.mudou_marcado.connect(w.setChecked)
+
+    def _ativar(self, botao_id, ativo):
+        botao = self.palco.findChild(QPushButton, botao_id)
+        if botao is not None:
+            botao.setEnabled(ativo)
+        if botao_id in self._peles:
+            self._peles[botao_id].ativar(ativo)
+
     def mostrar(self):
         self.showMaximized() if self._abrir_maximizada else self.show()
 
@@ -181,6 +215,8 @@ class Janela(QWidget):
             if ponto > 0:
                 fonte.setPointSizeF(ponto * f)
                 w.setFont(fonte)
+        for pele in self._peles.values():
+            pele.setZoomFactor(f)
         for e in self.tela.elementos:
             if e.sombra:
                 w = self.palco.findChild(QWidget, e.id)
@@ -232,7 +268,7 @@ class Janela(QWidget):
             self._falhou(botao_id, f"{type(e).__name__} ao abrir {lig.funcao.split(':')[0]}: {e}",
                          traceback.format_exc())
             return
-        self.palco.findChild(QPushButton, botao_id).setEnabled(False)
+        self._ativar(botao_id, False)
         QThreadPool.globalInstance().start(_Chamada(self.sinais, botao_id, chamavel, argumentos))
 
     def _saida(self, botao_id):
@@ -241,18 +277,18 @@ class Janela(QWidget):
         return self.palco.findChild(QWidget, saida) if saida else None
 
     def _terminou(self, botao_id, valor):
-        self.palco.findChild(QPushButton, botao_id).setEnabled(True)
+        self._ativar(botao_id, True)
         caixa = self._saida(botao_id)
         if isinstance(caixa, QLabel):
             caixa.setStyleSheet(self._estilo.get(caixa.objectName(), ""))
             caixa.setToolTip("")
         if caixa is not None:
             caixa.setText(formatar(valor))
+            if caixa.objectName() in self._peles:
+                self._peles[caixa.objectName()].definir_valor(formatar(valor))
 
     def _falhou(self, botao_id, mensagem, detalhe):
-        botao = self.palco.findChild(QPushButton, botao_id)
-        if botao is not None:
-            botao.setEnabled(True)
+        self._ativar(botao_id, True)
         caixa = self._saida(botao_id)
         if isinstance(caixa, QLabel):
             caixa.setStyleSheet(ESTILO_AVISO)

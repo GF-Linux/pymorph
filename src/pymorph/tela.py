@@ -30,7 +30,10 @@ ANTIGOS = {"rotulo", "resultado", "decimal", "inteiro", "texto"}
 
 # o papel da caixa → como ela se apresenta
 TEXTO, ENTRADA, SAIDA, ENTRADA_E_SAIDA = "texto", "entrada", "saida", "entrada e saída"
-QUADRO = {"border": "1px solid #c3c9d0", "border-radius": "6px", "padding": "6px", "background": "#f7f8f9"}
+# o fundo do quadro é claro e fixo, então a cor do texto também: no tema escuro do sistema o texto
+# viria branco e sumiria (visto no KDE em Wayland)
+QUADRO = {"border": "1px solid #c3c9d0", "border-radius": "6px", "padding": "6px", "background": "#f7f8f9",
+          "color": "#1d2329"}
 ESTILO_RESULTADO = "; ".join(f"{k}: {v}" for k, v in QUADRO.items()) + ";"
 PONTOS_RESULTADO = 14   # a fonte do resultado vai no .ui, e não no estilo, para o zoom escalar
 
@@ -58,6 +61,7 @@ class Elemento:
     destaque_cor: str = ""
     destaque_borda: str = ""
     digitavel: bool = False     # caixa de digitar mesmo sem ligação (vem assim de um layout pronto)
+    original: str = ""          # um original do Galaxy ('autor/nome') que roda no navegador embutido
 
     def contem(self, x, y, folga=0):
         return (self.x - folga <= x <= self.x + self.largura + folga
@@ -245,7 +249,7 @@ class Tela:
 
 
 VISUAIS = ("cor", "fundo", "borda_largura", "borda_cor", "raio", "espaco", "sombra", "destaque_fundo",
-           "destaque_cor", "destaque_borda", "digitavel")
+           "destaque_cor", "destaque_borda", "digitavel", "original")
 PADRAO_VISUAL = {k: Elemento.__dataclass_fields__[k].default for k in VISUAIS}
 
 

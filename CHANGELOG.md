@@ -1,5 +1,17 @@
 # Mudanças
 
+## 0.0.6
+
+- **originais com animação:** 2.355 componentes do Galaxy rodando como foram escritos, num navegador
+  embutido por cima do controle do Qt (que fica escondido e continua guardando texto, marcação e
+  clique). Vitrine viva no painel; o texto de quem desenha entra no original (HTML, `content` do CSS,
+  rótulo letra a letra; ícone fica); o elemento cresce no editor se o texto pedir.
+- um processo de navegador para todos os originais (`--renderer-process-limit=1`) e rede bloqueada.
+- corrigido: o programa caía ao fechar com originais abertos (o navegador desmontava páginas depois da
+  QApplication); agora as páginas saem antes.
+- corrigido: no tema escuro do sistema, o texto da caixa de resultado ficava branco no fundo claro.
+- `ferramentas/originais_galaxy.py` gera o catálogo dos originais; o Tailwind 3.4.16 (MIT) vai junto.
+
 ## 0.0.5
 
 - **estilos prontos** (540: 474 de botão, 66 de caixa) e **layouts prontos** (300: 87 formulários, 213

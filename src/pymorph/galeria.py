@@ -81,6 +81,29 @@ def importar_layout(tela, item):
     return criados
 
 
+def aplicar_original(tela, e, item):
+    """O elemento passa a ser desenhado pelo original (None volta ao desenho do Qt). O original
+    traz o tamanho dele: menor, cortaria a animação; o elemento continua do mesmo tipo e ligado."""
+    if item is None:
+        e.original = ""
+        return
+    e.original = item["id"]
+    e.largura, e.altura = item["largura"], item["altura"]
+    if e.tipo == "caixa" and item["tipo"] == "caixa":
+        e.digitavel = True
+    _creditar(tela, item)
+
+
+def adicionar_original(tela, item):
+    """Um elemento novo com o original: botão, caixa de digitar, caixa de marcar, ou uma caixa só de
+    enfeite (as animações)."""
+    tipo = {"animacao": "caixa"}.get(item["tipo"], item["tipo"])
+    texto = {"animacao": "", "caixa": "Texto", "marcar": ""}.get(item["tipo"])
+    e = tela.adicionar(tipo, texto=texto)
+    aplicar_original(tela, e, item)
+    return e
+
+
 def _tamanhos_a_partir_de(tamanho):
     nomes = list(TAMANHOS)
     return nomes[nomes.index(tamanho):]

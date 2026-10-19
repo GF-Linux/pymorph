@@ -49,6 +49,7 @@ def main(argv=None):
     if comando == "funcoes":
         return _funcoes(pasta)
 
+    import pymorph.web  # noqa: F401  — o navegador dos originais precisa nascer antes da QApplication
     from PySide6.QtWidgets import QApplication
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setApplicationName("PyMorph")

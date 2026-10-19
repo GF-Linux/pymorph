@@ -66,12 +66,26 @@ pymorph rodar      ← a tela como o usuário final vê
      calculado, traduz, desenha com o próprio PyMorph e compara as duas imagens. Só entra o que fica
      parecido (estilo ≥ 80%, layout ≥ 88%) e com texto legível (contraste ≥ 3). A galeria mostra o
      desenho do PyMorph: o que você vê é o que entra na tela.
-4. **Os arquivos** ficam ao lado do seu código, em `telas/`:
+4. **Originais com animação**: 2.355 componentes do Galaxy rodando **como foram escritos**, num
+   navegador embutido (QtWebEngine): 1.142 botões, 195 caixas, 159 caixas de marcar, 223 toggles e
+   636 animações (loaders). Animação, `::before`, rotação, o mouse por cima: tudo como no original.
+   - num botão, caixa ou caixa de marcar, "Originais (com animação)" mostra uma vitrine viva; um
+     clique veste o elemento com o original. Sem nada selecionado, um clique põe um elemento novo;
+   - o elemento continua o mesmo: ligado à função, com o seu texto. O texto entra onde o original
+     põe o dele (no HTML, no `content` do CSS, no rótulo animado letra a letra); botão que é só
+     ícone fica com o ícone; se o seu texto pedir mais espaço, o elemento cresce no editor;
+   - por baixo da pele, o controle do Qt continua na tela, escondido: é dele que a função lê. Por
+     isso o `.ui` continua abrindo no Qt Designer;
+   - todos os originais dividem um processo de navegador e a rede fica bloqueada. Medido: o
+     primeiro original custa ~205 MB de memória; cada outro, ~2,5 MB;
+   - o catálogo é gerado por `ferramentas/originais_galaxy.py` (o tamanho real em 4 instantes da
+     animação; o fundo, claro ou escuro, em que o original aparece).
+5. **Os arquivos** ficam ao lado do seu código, em `telas/`:
    - `principal.ui` — o desenho, no formato do Qt Designer (abre nele); leva só o que o PyMorph
      controla, e não as dezenas de propriedades padrão de cada widget;
    - `principal.ligacoes.json` — que função cada botão chama, de onde vêm as entradas, para onde vai a
      saída.
-5. **A tela rodando** (`Executar ▶` no editor, ou `pymorph rodar`):
+6. **A tela rodando** (`Executar ▶` no editor, ou `pymorph rodar`):
    - o desenho vem do `.ui` pelo `QUiLoader`; o seu arquivo só é importado na primeira chamada;
    - cada chamada roda numa thread: a janela não congela num cálculo longo;
    - erro da função vira aviso no lugar do resultado (o traceback fica no texto de ajuda); numa ação,
