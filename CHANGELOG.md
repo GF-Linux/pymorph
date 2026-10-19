@@ -1,28 +1,5 @@
 # Mudanças
 
-## 0.0.8
-
-- corrigido: a caixa padrão sumia do palco. O contorno tracejado tinha ficado só para a caixa vazia (e a
-  caixa nova nasce com "Texto"); voltou para toda caixa sem fundo nem borda. Os textos do layout do PNG,
-  de fundo transparente escolhido, continuam sem ele.
-- o palco tem o fundo da janela do sistema, o mesmo da tela quando roda: com branco fixo, no tema escuro
-  o texto das caixas saía branco sobre branco. O tracejado e a grade tiram a cor do tema.
-
-## 0.0.7
-
-- **o layout de uma imagem (PNG):** a captura de tela de um programa vira o esqueleto editável —
-  paleta, barras, painéis, divisórias e formas (com cor e arredondamento) nas posições de lá; texto vira
-  "[a preencher]" e ícone/imagem, um espaço marcado. Cortes sucessivos nas bordas de cor + OpenCV.
-  Testado com uma captura do VS Code (1920×1080: 23 painéis, 31 linhas, 253 textos, 59 imagens, 0,4 s).
-- saiu a aba de Formulários e Cards (o catálogo continua no pacote, para quando voltar).
-- **as animações no editor:** o palco liga o estado de mouse por cima do original que está debaixo do
-  mouse (as regras :hover/:focus viram uma classe), e num toggle mostra o marcar; na vitrine o original
-  recebe o mouse de verdade e o clique dentro dele escolhe. A animação em laço já rodava (medido).
-- corrigido: o JavaScript da ponte estava numa string comum do Python (\b virava retrocesso; \w, \s,
-  \d davam SyntaxWarning); agora é string crua.
-- o contorno tracejado do editor só aparece na caixa que, vazia e sem fundo, sumiria.
-- dependências novas: numpy e opencv-python-headless.
-
 ## 0.0.6
 
 - **originais com animação:** 2.355 componentes do Galaxy rodando como foram escritos, num navegador

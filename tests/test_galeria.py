@@ -49,6 +49,7 @@ def test_importar_layout_cabe_na_tela_e_a_caixa_vem_de_digitar(tmp_path):
 def test_o_catalogo_vem_no_pacote():
     cat = galeria.catalogo()
     assert len(galeria.estilos("botao")) > 100 and len(galeria.estilos("caixa")) > 20
+    assert galeria.layouts("Formulário") and galeria.layouts("Card")
     assert all(i["nota"] >= 0.8 and i["url"].startswith("https://uiverse.io/") for i in cat["estilos"])
     textos = {c["texto"] for i in cat["layouts"] for c in i["elementos"]}
     assert textos <= {"", "[a preencher]", "[imagem a preencher]"}   # o desenho vem; o texto é seu
@@ -66,3 +67,8 @@ def test_a_galeria_do_painel_aplica_no_selecionado(app, config, tmp_path):
     botoes[1].click()                         # o 0 é "Sem estilo"
     assert editor.tela.elemento("botao").raio == 8
     assert "border-radius: 8px" in editor.palco.widgets["botao"].styleSheet()
+    editor.painel.mostrar(None)
+    vitrines = editor.painel.widget().findChildren(Galeria)
+    vitrines[1].mudar_itens([FORM])
+    [b for b in vitrines[1].findChildren(QToolButton) if not b.isHidden()][0].click()
+    assert len(editor.tela.elementos) == 5 and editor.tamanho.currentData() == "intermediaria"

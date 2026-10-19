@@ -9,15 +9,13 @@ from functools import cache
 from pathlib import Path
 
 from PySide6.QtCore import QFileSystemWatcher, QPoint, QRect, QSize, Qt, Signal
-from PySide6.QtGui import (QAction, QColor, QFont, QFontDatabase, QFontMetrics, QIcon, QKeySequence, QPainter,
-                           QPalette, QPen)
-from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QFileDialog, QFormLayout,
-                               QGridLayout, QHBoxLayout,
+from PySide6.QtGui import QAction, QColor, QFont, QFontDatabase, QFontMetrics, QIcon, QKeySequence, QPainter, QPen
+from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QFormLayout, QGridLayout, QHBoxLayout,
                                QLabel, QLineEdit,
                                QMainWindow, QMessageBox, QPushButton, QScrollArea, QSpinBox, QSplitter,
                                QToolBar, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
-from pymorph import __version__, executor, galeria, png, web
+from pymorph import __version__, executor, galeria, web
 from pymorph.leitor import funcoes_por_chave, ler_pasta
 from pymorph.tela import (ENTRADA, ENTRADA_E_SAIDA, ENTRADAS, NOME_TAMANHO, NOME_TIPO, SAIDA, TAMANHOS, TEXTO,
                           TIPOS, Elemento, Ligacao, Tela, estilo, gerar_da_funcao)
@@ -318,7 +316,7 @@ class Galeria(QWidget):
 
 class Moldura(QWidget):
     """Camada por cima do palco: a seleção, a alça de tamanho, a marca de botão ligado e o contorno
-    tracejado da caixa de texto sem fundo nem borda, que sem ele não mostraria onde começa e termina."""
+    tracejado das caixas de texto (uma caixa vazia sumiria do palco)."""
 
     def __init__(self, palco):
         super().__init__(palco)
@@ -330,13 +328,9 @@ class Moldura(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         tela = self.palco.tela
         for e in tela.elementos:
-            # fundo "transparent" é escolha (é o que o layout do PNG põe nos textos): ali o contorno só polui
-            invisivel = e.fundo == "" and e.borda_largura <= 0 and not e.borda_cor and not e.original
-            if e.tipo == "caixa" and tela.papel(e.id) == TEXTO and invisivel:
+            if e.tipo == "caixa" and tela.papel(e.id) == TEXTO:
                 p.setBrush(Qt.BrushStyle.NoBrush)
-                tracejado = self.palette().color(QPalette.ColorRole.WindowText)
-                tracejado.setAlpha(110)
-                p.setPen(QPen(tracejado, 1, Qt.PenStyle.DashLine))
+                p.setPen(QPen(QColor("#c3c9d0"), 1, Qt.PenStyle.DashLine))
                 p.drawRect(QRect(e.x, e.y, e.largura - 1, e.altura - 1))
             elif e.tipo == "botao":
                 p.setPen(Qt.PenStyle.NoPen)
@@ -448,8 +442,6 @@ class Palco(QWidget):
     def mouseMoveEvent(self, ev):
         ponto = ev.position().toPoint()
         if self._arrasto is None:
-            sob = self._no_ponto(ponto)
-            self._destacar(sob.id if sob is not None else None)
             e = self.tela.elemento(self.selecionado)
             if e is not None and self._na_alca(e, ponto):
                 self.setCursor(Qt.CursorShape.SizeFDiagCursor)
@@ -459,7 +451,6 @@ class Palco(QWidget):
                 self.unsetCursor()
             return
         modo, e, inicio, (x0, y0, l0, a0) = self._arrasto
-        self._destacar(None)
         livre = bool(ev.modifiers() & Qt.KeyboardModifier.ShiftModifier)
         dx, dy = ponto.x() - inicio.x(), ponto.y() - inicio.y()
         if modo == "mover":
@@ -474,22 +465,6 @@ class Palco(QWidget):
 
     def mouseReleaseEvent(self, _):
         self._arrasto = None
-
-    def _destacar(self, id_):
-        """O original debaixo do mouse mostra o estado de mouse por cima (a pele não pega o mouse,
-        para o palco poder arrastar; então o palco liga o estado por ela)."""
-        anterior = getattr(self, "_destacado", None)
-        if anterior == id_:
-            return
-        for alvo, ligado in ((anterior, False), (id_, True)):
-            w = self.widgets.get(alvo)
-            if isinstance(w, web.Pele):
-                w.destacar(ligado)
-        self._destacado = id_
-
-    def leaveEvent(self, ev):
-        self._destacar(None)
-        super().leaveEvent(ev)
 
     def keyPressEvent(self, ev):
         e = self.tela.elemento(self.selecionado)
@@ -515,14 +490,9 @@ class Palco(QWidget):
             super().keyPressEvent(ev)
 
     def paintEvent(self, _):
-        # o fundo é o da janela do sistema, o mesmo da tela quando roda: com branco fixo, no tema escuro
-        # o texto das caixas (que segue o sistema) saía branco sobre branco
         p = QPainter(self)
-        fundo = self.palette().color(QPalette.ColorRole.Window)
-        p.fillRect(self.rect(), fundo)
-        ponto = self.palette().color(QPalette.ColorRole.WindowText)
-        ponto.setAlpha(40)
-        p.setPen(ponto)
+        p.fillRect(self.rect(), QColor("#ffffff"))
+        p.setPen(QColor("#dfe3e8"))
         for x in range(0, self.width(), GRADE * 2):
             for y in range(0, self.height(), GRADE * 2):
                 p.drawPoint(x, y)
@@ -678,38 +648,19 @@ class PainelPropriedades(QScrollArea):
         form.addRow(GaleriaOriginais(("Botão", "Caixa", "Caixa de marcar", "Toggle", "Animação"),
                                      self._adicionar_original))
 
-        self._layout_png(form)
-
-    def _layout_png(self, form):
-        form.addRow(self._titulo("Layout de uma imagem (PNG)", "#174a94"))
-        dica = QLabel("A captura de tela de um programa vira o esqueleto: as cores, as barras e os painéis "
-                      "nas posições de lá. Texto vira “[a preencher]”; ícone e imagem, um espaço marcado — "
-                      "o que é dos outros fica para você preencher.")
-        dica.setWordWrap(True)
-        dica.setStyleSheet("color: #59616b; font-size: 11px;")
-        form.addRow(dica)
-        escolher = QPushButton("Escolher imagem…")
-        escolher.clicked.connect(self._escolher_png)
-        form.addRow(escolher)
-
-    def _escolher_png(self):
-        caminho, _ = QFileDialog.getOpenFileName(self, "Imagem de referência", str(self.editor.pasta),
-                                                 "Imagens (*.png *.jpg *.jpeg *.webp *.bmp)")
-        if not caminho:
-            return
-        substituir = True
-        if self.tela.elementos:
-            caixa = QMessageBox(QMessageBox.Icon.Question, "PyMorph",
-                                "A tela já tem elementos. O esqueleto da imagem substitui a tela ou entra junto?",
-                                parent=self)
-            trocar = caixa.addButton("Substituir", QMessageBox.ButtonRole.AcceptRole)
-            juntar = caixa.addButton("Acrescentar", QMessageBox.ButtonRole.ActionRole)
-            caixa.addButton(QMessageBox.StandardButton.Cancel)
-            caixa.exec()
-            if caixa.clickedButton() not in (trocar, juntar):
-                return
-            substituir = caixa.clickedButton() is trocar
-        self.editor.importar_png(caminho, substituir)
+        form.addRow(self._titulo("Layouts prontos", "#174a94"))
+        categoria = self._caixa_escolha()
+        for nome in ("Formulário", "Card"):
+            categoria.addItem(nome + "s", nome)
+        form.addRow("Mostrar", categoria)
+        layouts = Galeria(galeria.layouts("Formulário"), self._importar_layout)
+        categoria.currentIndexChanged.connect(lambda _: layouts.mudar_itens(galeria.layouts(categoria.currentData())))
+        form.addRow(layouts)
+        aviso = QLabel("Do Galaxy (Uiverse.io, MIT). O desenho vem pronto; os textos vêm “[a preencher]”. "
+                       "O crédito de cada autor fica salvo com a tela.")
+        aviso.setWordWrap(True)
+        aviso.setStyleSheet("color: #59616b; font-size: 11px;")
+        form.addRow(aviso)
 
     def _aplicar_estilo(self, elementos, item):
         for e in elementos:
@@ -1066,30 +1017,6 @@ class Editor(QMainWindow):
         self.palco.atualizar(e.id)
         self.palco.selecionar(e.id)
         self._modificou()
-
-    def importar_png(self, caminho, substituir=True):
-        """O esqueleto de uma imagem de referência (png.py) na tela; devolve o resultado da análise."""
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        try:
-            resultado = png.analisar(caminho)
-            png.aplicar(self.tela, resultado, substituir)
-        except ValueError as erro:
-            QApplication.restoreOverrideCursor()
-            QMessageBox.warning(self, "PyMorph", str(erro))
-            return None
-        QApplication.restoreOverrideCursor()
-        self.tamanho.blockSignals(True)
-        self.tamanho.setCurrentIndex(self.tamanho.findData(self.tela.tamanho))
-        self.tamanho.blockSignals(False)
-        self.palco.reconstruir()
-        self.palco.selecionar(None)
-        self._modificou()
-        c = resultado["contagem"]
-        self.statusBar().showMessage(
-            f"{Path(caminho).name}: {c['painel']} painéis, {c['forma']} formas, {c['linha']} linhas, "
-            f"{c['texto']} textos e {c['imagem']} imagens a preencher · paleta {' '.join(resultado['paleta'][:6])}",
-            15000)
-        return resultado
 
     def _mudar_tamanho(self):
         self.tela.mudar_tamanho(self.tamanho.currentData())

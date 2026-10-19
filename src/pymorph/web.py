@@ -40,7 +40,7 @@ PECA = {
     "animacao": "document.body.firstElementChild",
 }
 
-PONTE = r"""
+PONTE = """
 (() => {
   const peca = %(peca)s, tipo = %(tipo)s;
   const primeiroTexto = () => { if (!peca) return null;
@@ -79,25 +79,7 @@ PONTE = r"""
       document.head.appendChild(s); return true; }
     return false; };
   const dicaOriginal = peca && peca.placeholder;
-  let clonadas = false, marcadoAntes = null;
-  const clonarEstados = () => {        // :hover/:focus viram a classe pm-hover (o editor liga sem mouse)
-    if (clonadas) return; clonadas = true;
-    const tem = /:(hover|focus-within|focus-visible|focus)\b/, troca = /:(hover|focus-within|focus-visible|focus)\b/g;
-    const regras = [];
-    const varrer = lista => { for (const r of lista) {
-      if (r.cssRules && !r.selectorText) varrer(r.cssRules);
-      else if (r.selectorText && tem.test(r.selectorText))
-        regras.push(r.selectorText.replace(troca, '.pm-hover') + '{' + r.style.cssText + '}'); } };
-    for (const f of document.styleSheets) { try { varrer(f.cssRules); } catch (e) {} }
-    const s = document.createElement('style'); s.textContent = regras.join('\n'); document.head.appendChild(s); };
   window.__pm = {
-    destacar(ligado) {                 // o mouse por cima, no editor; num toggle, mostra o marcar
-      clonarEstados();
-      const alvo = peca || document.body.firstElementChild;
-      for (let a = alvo; a; a = a.parentElement) a.classList.toggle('pm-hover', ligado);
-      if (tipo === 'marcar' && peca) {
-        if (ligado) { marcadoAntes = peca.checked; peca.checked = !peca.checked; }
-        else if (marcadoAntes !== null) peca.checked = marcadoAntes; } },
     texto(t) { if (!peca || !t) return;
       if (tipo === 'caixa') {             // a dica vai para onde o original põe a dele: dica ou rótulo
         const rotulo = document.querySelector('label');
@@ -298,11 +280,6 @@ class Pele(QWebEngineView):
     def definir_marcado(self, marcado):
         self._js(f"window.__pm && __pm.marcado({json.dumps(bool(marcado))})")
 
-    def destacar(self, ligado):
-        if getattr(self, "_destacada", False) != ligado:
-            self._destacada = ligado
-            self._js(f"window.__pm && __pm.destacar({json.dumps(bool(ligado))})")
-
     def ativar(self, ativo):
         self._js(f"window.__pm && __pm.ativo({json.dumps(bool(ativo))})")
 
@@ -317,9 +294,7 @@ def vitrine(itens, largura_celula, altura_celula, com_padrao=False):
     for i, it in enumerate(itens):
         escala = min(1.0, largura_celula / it["largura"], altura_celula / it["altura"])
         fundo = "#212121" if it.get("escuro") else "#ffffff"     # o fundo em que o original aparece
-        clique = ("<script>document.addEventListener('click', e => { e.preventDefault(); e.stopPropagation();"
-                  f" parent.postMessage('pm:{i}', '*'); }}, true);</script>")
-        doc = html.escape(documento(it, ponte=False, fundo=fundo).replace("</body>", clique + "</body>"), quote=True)
+        doc = html.escape(documento(it, ponte=False, fundo=fundo), quote=True)
         titulo = html.escape(f"{it['categoria']} de {it['autor']} · Uiverse.io (MIT)")
         celulas.append(
             f"<div class='c' style='background:{fundo}' onclick=\"console.log('pymorph:escolha:{i}')\" "
@@ -333,10 +308,8 @@ def vitrine(itens, largura_celula, altura_celula, com_padrao=False):
             f".c{{height:{altura_celula + 12}px;background:#fff;border:1px solid #d5dae0;border-radius:6px;"
             "display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden}"
             ".c:hover{border-color:#1f5fbf;box-shadow:0 0 0 1px #1f5fbf}"
-            "iframe{border:0;background:transparent}.sem{padding:4px}"
-            "</style></head><body><div class='g'>" + "".join(celulas) + "</div>"
-            "<script>addEventListener('message', e => { if (typeof e.data === 'string' && e.data.startsWith('pm:'))"
-            " console.log('pymorph:escolha:' + e.data.slice(3)); });</script></body></html>")
+            "iframe{border:0;pointer-events:none;background:#fff}.sem{padding:4px}"
+            "</style></head><body><div class='g'>" + "".join(celulas) + "</div></body></html>")
 
 
 class Vitrine(QWebEngineView):

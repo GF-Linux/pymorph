@@ -108,36 +108,3 @@ def test_no_editor_o_elemento_cresce_para_o_texto_caber(calculadora, config, app
     e.texto = "Calcular a média ponderada"
     editor.palco.reconstruir()
     assert esperar(lambda: e.largura > largura, 8)
-
-
-def test_o_palco_liga_o_mouse_por_cima_do_original(calculadora, config, app):
-    from pymorph.editor import Editor
-    editor = Editor(calculadora, config=config)
-    editor.show()
-    editor._adicionar("botao")
-    e = editor.tela.elemento("botao")
-    galeria.aplicar_original(editor.tela, e, web.item("3bdel3ziz-T/brown-earwig-37"))  # ::before abre no :hover
-    editor.palco.reconstruir()
-    pele = editor.palco.widgets["botao"]
-    assert esperar(lambda: pele._pronta)
-    largura = "getComputedStyle(document.querySelector('.button'), '::before').width"
-    assert _avaliar(pele, largura) == "0px"
-    editor.palco._destacar("botao")                     # o que o mouseMoveEvent faz com o mouse por cima
-    assert esperar(lambda: _avaliar(pele, largura) == "135px", 5)
-    editor.palco._destacar(None)
-    assert esperar(lambda: _avaliar(pele, largura) == "0px", 5)
-
-
-def test_na_vitrine_o_original_recebe_o_mouse_e_o_clique_escolhe(app):
-    vitrine = web.Vitrine()
-    vitrine.resize(280, 400)
-    vitrine.show()
-    escolhas = []
-    vitrine.escolheu.connect(escolhas.append)
-    pronta = []
-    vitrine.loadFinished.connect(pronta.append)
-    vitrine.mostrar(web.originais("Botão")[:4], 116, 60)
-    assert esperar(lambda: pronta)
-    assert _avaliar(vitrine, "getComputedStyle(document.querySelector('iframe')).pointerEvents") == "auto"
-    vitrine.page().runJavaScript("document.querySelectorAll('iframe')[2].contentDocument.body.click()")
-    assert esperar(lambda: escolhas == [2], 5)
